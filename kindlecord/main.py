@@ -63,7 +63,7 @@ def run():
     token = None
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE) as f:
-            token = f.read().strip()
+            token = f.read().strip().strip('"').strip("'").strip()
 
     if not token:
         # Start web server for token entry
@@ -126,9 +126,10 @@ def run():
         user = discord.login()
         items = None
     except DiscordError as e:
-        title = "Login Error"
-        err_lines = str(e).split("\n")[:5]
-        items = err_lines + ["", "Delete token.txt", "Press power 2x to exit"]
+        title = "Token invalido"
+        err_lines = str(e).split("\n")[:3]
+        items = err_lines + ["", "Token invalido foi removido.",
+                             "Toque Exit e tente novamente."]
     except Exception as e:
         title = "Error"
         items = [str(e), "", "Press power 2x to exit"]
@@ -140,6 +141,10 @@ def run():
                      show_title_bar=True, back_label="Exit"))
         done = [False]
         def _done():
+            try:
+                os.remove(TOKEN_FILE)
+            except OSError:
+                pass
             done[0] = True
         err_app.screens["error"]._on_back = _done
         err_app.show("error")

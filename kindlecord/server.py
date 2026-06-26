@@ -180,7 +180,7 @@ def _handle_client(conn, addr, callback):
             else:
                 body_str = body.decode("utf-8")
             params = urlparse.parse_qs(body_str)
-            token = params.get("token", [""])[0].strip()
+            token = params.get("token", [""])[0].strip().strip('"').strip("'").strip()
 
             if token:
                 print("[SERVER] token received, len=%d" % len(token))
