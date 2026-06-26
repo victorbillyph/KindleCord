@@ -76,6 +76,9 @@ def run():
         ip = _get_local_ip()
         url = "http://{0}:{1}".format(ip, port)
 
+        if server is None:
+            url = "http://{0}:{1} (FAILED)".format(ip, port)
+
         # Show login screen with quit button
         login_screen = LoginScreen(url)
         quit_app = [False]

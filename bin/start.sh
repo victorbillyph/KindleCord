@@ -17,11 +17,16 @@ echo "=== KindleCord $(date) ===" > "$LOG"
 
 cleanup() {
     echo "Cleanup..." >> "$LOG"
+    iptables -D INPUT -p tcp --dport 8080 -j ACCEPT 2>> "$LOG"
     killall -CONT awesome 2>> "$LOG"
     lipc-set-prop com.lab126.pillow disableEnablePillow enable 2>> "$LOG"
     eips -f
 }
 trap cleanup EXIT INT TERM
+
+echo "Opening firewall port 8080..." >> "$LOG"
+iptables -C INPUT -p tcp --dport 8080 -j ACCEPT 2>> "$LOG" || \
+    iptables -A INPUT -p tcp --dport 8080 -j ACCEPT 2>> "$LOG"
 
 echo "Disabling pillow..." >> "$LOG"
 lipc-set-prop com.lab126.pillow disableEnablePillow disable 2>> "$LOG"

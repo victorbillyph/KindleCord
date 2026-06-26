@@ -1,4 +1,5 @@
 import threading
+import socket
 
 try:
     import BaseHTTPServer
@@ -63,6 +64,8 @@ class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self._send(200, "text/html", PAGE.encode())
+        elif self.path == "/favicon.ico":
+            self._send(204, "text/plain", b"")
         else:
             self._send(404, "text/plain", b"Not found")
 
@@ -87,8 +90,13 @@ class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+            self.wfile.flush()
+        except (IOError, OSError):
+            pass
 
     def log_message(self, *args):
         pass
@@ -96,8 +104,13 @@ class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
 
 def start_server(host, port, callback):
     _Handler.cb = callback
-    server = BaseHTTPServer.HTTPServer((host, port), _Handler)
-    t = threading.Thread(target=server.serve_forever)
-    t.daemon = True
-    t.start()
-    return server
+    try:
+        server = BaseHTTPServer.HTTPServer((host, port), _Handler)
+        server.timeout = 1
+        t = threading.Thread(target=server.serve_forever)
+        t.daemon = True
+        t.start()
+        return server
+    except (socket.error, IOError, OSError) as e:
+        print("[SERVER] Failed to start: %s" % e)
+        return None
