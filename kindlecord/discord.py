@@ -3,11 +3,11 @@ import json
 import ssl
 
 try:
-    import urllib2
+    import httplib
     import urllib
     PY2 = True
 except ImportError:
-    import urllib.request as urllib2
+    import http.client as httplib
     import urllib.parse as urllib
     PY2 = False
 
@@ -17,7 +17,8 @@ try:
 except AttributeError:
     pass
 
-API_BASE = "https://discord.com/api/v10"
+API_BASE = "discord.com"
+API_VERSION = "/api/v10"
 
 
 class DiscordError(Exception):
@@ -26,36 +27,48 @@ class DiscordError(Exception):
 
 class DiscordClient:
     def __init__(self, token, api_base=API_BASE):
-        self.token = token
+        self.token = str(token).strip()
         self.api_base = api_base
         self.user = None
-
-    def _headers(self):
-        return {
-            "Authorization": self.token,
-            "Content-Type": "application/json",
-            "User-Agent": "KindleCord/0.1.0",
-        }
+        print("[DISCORD] token len=%d, first=%.10s" % (len(self.token), self.token[:10]))
 
     def _request(self, method, path, data=None):
-        url = self.api_base + path
+        url = API_VERSION + path
         body = json.dumps(data) if data is not None else None
+        if PY2 and body is not None:
+            body = body.encode("utf-8")
         if not PY2 and body is not None:
-            body = body.encode()
-        req = urllib2.Request(url, data=body, headers=self._headers())
-        if PY2:
-            req.get_method = lambda: method
-        else:
-            req.method = method
+            body = body.encode("utf-8")
+
+        headers = {
+            "Authorization": self.token,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Host": self.api_base,
+        }
+
+        print("[DISCORD] %s %s" % (method, url))
         try:
-            with urllib2.urlopen(req) as resp:
-                return json.loads(resp.read())
-        except urllib2.HTTPError as e:
-            resp_body = e.read()
-            raise DiscordError("HTTP %d: %s" % (e.code, resp_body))
-        except urllib2.URLError as e:
-            reason = e.reason if PY2 else e.reason
-            raise DiscordError("Network error: %s" % reason)
+            if PY2:
+                ctx = ssl._create_unverified_context()
+                conn = httplib.HTTPSConnection(self.api_base, context=ctx, timeout=30)
+            else:
+                conn = httplib.HTTPSConnection(self.api_base, timeout=30)
+            conn.request(method, url, body=body, headers=headers)
+            resp = conn.getresponse()
+            resp_body = resp.read()
+            print("[DISCORD] response: %d" % resp.status)
+            if PY2:
+                resp_body_str = resp_body
+            else:
+                resp_body_str = resp_body.decode("utf-8")
+            if resp.status >= 400:
+                raise DiscordError("HTTP %d: %s" % (resp.status, resp_body_str))
+            return json.loads(resp_body_str)
+        except DiscordError:
+            raise
+        except Exception as e:
+            raise DiscordError("Network error: %s" % e)
 
     def login(self):
         self.user = self._request("GET", "/users/@me")
