@@ -76,11 +76,11 @@ def run():
             token_value[0] = t
             token_event.set()
 
-        server = start_server("0.0.0.0", port, _on_token, ready_event=server_ready)
+        ok = start_server("0.0.0.0", port, _on_token, ready_event=server_ready)
         ip = _get_local_ip()
         url = "http://{0}:{1}".format(ip, port)
 
-        if server is None:
+        if not ok:
             url = "http://{0}:{1} (FAILED)".format(ip, port)
 
         # Show login screen with quit button
