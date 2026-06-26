@@ -1,4 +1,5 @@
 import json
+import ssl
 
 try:
     import urllib2
@@ -8,6 +9,12 @@ except ImportError:
     import urllib.request as urllib2
     import urllib.parse as urllib
     PY2 = False
+
+# Disable SSL verification — Kindle's CA store is outdated
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
 
 API_BASE = "https://discord.com/api/v10"
 
