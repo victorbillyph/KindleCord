@@ -88,8 +88,27 @@ class GfxEngine(object):
             print("[GFX] fb %dx%d stride=%d bpp=%d cols=%d rows=%d" %
                   (w, h, stride, bpp, self.cols, self.rows))
 
+        self._text_cells = set()
+
+    def _clip_rect(self, x, y, w, h):
+        """Clip rectangle to display bounds."""
+        if x < 0:
+            w += x
+            x = 0
+        if y < 0:
+            h += y
+            y = 0
+        if x + w > self.width:
+            w = self.width - x
+        if y + h > self.height:
+            h = self.height - y
+        if w <= 0 or h <= 0:
+            return (0, 0, 0, 0)
+        return (x, y, w, h)
+
     def clear(self, color=0xFF):
         """Fill entire screen with color via fbink -k."""
+        self._text_cells.clear()
         cname = _gray_to_fbink(color)
         cmd = [FBINK, "-q", "-k", "-B", cname, "-b"]
         try:
@@ -99,12 +118,7 @@ class GfxEngine(object):
 
     def fill_rect(self, x, y, w, h, color):
         """Fill rectangle via fbink -k with region."""
-        if x < 0:
-            w += x
-            x = 0
-        if y < 0:
-            h += y
-            y = 0
+        x, y, w, h = self._clip_rect(x, y, w, h)
         if w <= 0 or h <= 0:
             return
         cname = _gray_to_fbink(color)
@@ -117,6 +131,9 @@ class GfxEngine(object):
 
     def pixel(self, x, y, color):
         """Single pixel via fbink -k 1x1 rect."""
+        x, y, w, h = self._clip_rect(x, y, 1, 1)
+        if w <= 0 or h <= 0:
+            return
         cname = _gray_to_fbink(color)
         region = "top=%d,left=%d,width=1,height=1" % (y, x)
         cmd = [FBINK, "-q", "-k", region, "-B", cname, "-b"]
@@ -128,6 +145,29 @@ class GfxEngine(object):
     def draw_text(self, cx, cy, text, fg=0x00, bg=0xFF):
         if not text:
             return
+        # Bounds check
+        if cx >= self.cols or cy >= self.rows:
+            return
+        # Truncate to fit screen width
+        max_chars = self.cols - cx
+        if max_chars <= 0:
+            return
+        text = text[:max_chars]
+        if not text:
+            return
+
+        # Prevent overlap with already-drawn text
+        text_len = len(text)
+        is_free = True
+        for i in xrange(text_len):
+            if (cx + i, cy) in self._text_cells:
+                is_free = False
+                break
+        if not is_free:
+            return
+        for i in xrange(text_len):
+            self._text_cells.add((cx + i, cy))
+
         px = cx * CELL
         py = cy * CELL
         fg_name = _gray_to_fbink(fg)
@@ -140,7 +180,6 @@ class GfxEngine(object):
         try:
             subprocess.check_call(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except Exception:
-            # Fallback: default IBM font
             cmd2 = [FBINK, "-q", "-b", "-S", "3",
                     "-C", fg_name, "-B", bg_name,
                     "-X", str(px), "-Y", str(py),
