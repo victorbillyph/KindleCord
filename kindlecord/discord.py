@@ -40,8 +40,10 @@ class DiscordClient:
         if not PY2 and body is not None:
             body = body.encode("utf-8")
 
+        # Bot tokens need "Bot " prefix; user tokens don't
+        prefix = "Bot " if not self.token.startswith(("Bot ", "Bearer ")) else ""
         headers = {
-            "Authorization": self.token,
+            "Authorization": prefix + self.token,
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Host": self.api_base,
