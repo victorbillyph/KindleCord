@@ -43,6 +43,12 @@ class Display(object):
     def draw_text(self, cx, cy, text, fg=0x00, bg=0xFF):
         self.engine.draw_text(cx, cy, text, fg, bg)
 
+    def hline(self, x, y, w, color):
+        self.engine.hline(x, y, w, color)
+
+    def vline(self, x, y, h, color):
+        self.engine.vline(x, y, h, color)
+
     def invert_rect(self, x, y, w, h):
         self.engine.fill_rect(x, y, w, h, 0x00)
 
