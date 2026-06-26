@@ -126,11 +126,13 @@ def run():
         user = discord.login()
         items = None
     except DiscordError as e:
+        print("[MAIN] DiscordError: %s" % e)
         title = "Token invalido"
         err_lines = str(e).split("\n")[:3]
         items = err_lines + ["", "Token invalido foi removido.",
                              "Toque Exit e tente novamente."]
     except Exception as e:
+        print("[MAIN] Exception: %s" % e)
         title = "Error"
         items = [str(e), "", "Press power 2x to exit"]
 
