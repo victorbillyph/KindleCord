@@ -117,10 +117,7 @@ def run():
             f.write(token)
 
     # Log in to Discord
-    discord = DiscordClient(
-        token,
-        config.get("discord_api_base", "https://discord.com/api/v10"),
-    )
+    discord = DiscordClient(token)
 
     try:
         user = discord.login()
