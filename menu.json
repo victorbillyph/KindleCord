@@ -1,0 +1,9 @@
+{
+    "items": [
+        {
+            "name": "KindleCord",
+            "priority": 100,
+            "action": "./bin/start.sh"
+        }
+    ]
+}
