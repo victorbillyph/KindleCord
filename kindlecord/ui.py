@@ -132,7 +132,6 @@ class TitleBar95(object):
         display.fill_rect(0, self.BAR_H - 1, w, 1, W95_BLACK)
         # title
         display.draw_text(1, 0, _trunc(self.title, cols - 4), W95_WHITE, W95_BLUE)
-        display.draw_text(1, 1, _trunc(self.title, cols - 4), W95_WHITE, W95_BLUE)
         # close button (X) on the right
         close_x = cols - 4
         display.fill_rect(_cx(close_x), 4, 3 * _CELL, self.BAR_H - 10, W95_GRAY)
@@ -187,16 +186,7 @@ class Screen95(object):
         self.components = []
 
     def render(self, display):
-        display.engine.clear(DESKTOP)
-        # small frame margin (2 cells top, 1 cell sides)
-        margin_x = _CELL
-        margin_y = 0
-        cx = margin_x
-        cy = margin_y
-        cw = display.width - margin_x * 2
-        ch = display.height - margin_y
-        display.fill_rect(cx, cy, cw, ch, W95_WHITE)
-        _bevel_frame(display, cx, cy, cw, ch)
+        display.engine.clear(W95_WHITE)
         for comp in self.components:
             comp.render(display)
         display.refresh()

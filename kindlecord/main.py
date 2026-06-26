@@ -106,8 +106,6 @@ def run():
             if ev:
                 login_screen.on_touch(ev.x, ev.y)
 
-        server.shutdown()
-
         if quit_app[0]:
             inp.close()
             display.clear()

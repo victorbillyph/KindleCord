@@ -90,13 +90,9 @@ class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Connection", "close")
         self.end_headers()
-        try:
-            self.wfile.write(data)
-            self.wfile.flush()
-        except (IOError, OSError):
-            pass
+        self.wfile.write(data)
+        self.wfile.flush()
 
     def _log(self, msg):
         print("[SERVER] %s" % msg)
