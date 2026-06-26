@@ -3,12 +3,13 @@ import socket
 import sys
 import time
 import json
+import threading
 
 from kindlecord.display import Display
 from kindlecord.input import InputReader, PowerWatcher
 from kindlecord.server import start_server
 from kindlecord.discord import DiscordClient, DiscordError
-from kindlecord.ui import App, LoginScreen, ListScreen, MessageScreen
+from kindlecord.ui import App95, LoginScreen95, ListScreen95, MessageScreen95, Dialog95
 
 try:
     input = raw_input
@@ -68,11 +69,14 @@ def run():
         # Start web server for token entry
         port = config.get("port", AUTH_PORT)
         token_value = [None]
+        token_event = threading.Event()
+        server_ready = threading.Event()
 
         def _on_token(t):
             token_value[0] = t
+            token_event.set()
 
-        server = start_server("0.0.0.0", port, _on_token)
+        server = start_server("0.0.0.0", port, _on_token, ready_event=server_ready)
         ip = _get_local_ip()
         url = "http://{0}:{1}".format(ip, port)
 
@@ -80,7 +84,7 @@ def run():
             url = "http://{0}:{1} (FAILED)".format(ip, port)
 
         # Show login screen with quit button
-        login_screen = LoginScreen(url)
+        login_screen = LoginScreen95(url)
         quit_app = [False]
 
         def _quit():
@@ -88,7 +92,7 @@ def run():
 
         login_screen._on_quit = _quit
 
-        app = App(display, None)
+        app = App95(display, None)
         app.add("login", login_screen)
         app.show("login")
 
@@ -98,7 +102,7 @@ def run():
             if pw.is_double():
                 quit_app[0] = True
                 break
-            ev = inp.poll(timeout=0.5)
+            ev = inp.poll(timeout=0.2)
             if ev:
                 login_screen.on_touch(ev.x, ev.y)
 
@@ -133,8 +137,8 @@ def run():
 
     if items is not None:
         display.clear()
-        err_app = App(display, discord)
-        err_app.add("error", ListScreen(title, items,
+        err_app = App95(display, discord)
+        err_app.add("error", ListScreen95(title, items,
                      show_title_bar=True, back_label="Exit"))
         done = [False]
         def _done():
@@ -152,7 +156,7 @@ def run():
         return
 
     # Main app with Discord
-    app = App(display, discord)
+    app = App95(display, discord)
     guilds_cache = {"guilds": [], "channels": {}}
 
     def quit_app():
@@ -201,12 +205,12 @@ def run():
     def _on_back_to_main():
         show_guilds()
 
-    app.add("guilds", ListScreen("KindleCord", [],
+    app.add("guilds", ListScreen95("KindleCord", [],
              on_select=_on_guild_select, on_back=quit_app,
              back_label="[Quit]"))
-    app.add("channels", ListScreen("", [],
+    app.add("channels", ListScreen95("", [],
              back_label="[Back to servers]"))
-    app.add("messages", MessageScreen(""))
+    app.add("messages", MessageScreen95(""))
 
     show_guilds()
 

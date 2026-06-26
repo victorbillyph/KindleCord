@@ -1,44 +1,58 @@
 # -*- coding: utf-8 -*-
-"""Graphical UI framework for Kindle e-ink display."""
+"""Windows 95 themed UI framework for Kindle e-ink display."""
 
-# ── colors ──────────────────────────────────────────────────────────
-BLACK = 0x00
-DARK = 0x44
-MID = 0x88
-LIGHT = 0xBB
-WHITE = 0xFF
-
-BTN_BG = 0x33
-BTN_FG = WHITE
-BTN_BORDER = 0x66
-TITLE_BG = BLACK
-TITLE_FG = WHITE
-ITEM_BG = 0xEE
-ITEM_BORDER = 0xCC
-BG = WHITE
-TEXT = BLACK
-HINT = 0x66
+# ── Win95 grayscale palette ───────────────────────────────────────
+DESKTOP = 0x55      # teal equivalent
+W95_GRAY = 0xBB     # button face (C0C0C0 in color)
+W95_DARK = 0x44     # shadow / dark border
+W95_LIGHT = 0xDD    # highlight / light border
+W95_BLUE = 0x33     # title bar blue equivalent
+W95_BLACK = 0x00
+W95_WHITE = 0xFF
 
 _CELL = 24
 
-# ── helpers ─────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────
 def _cx(cell_x):
     return cell_x * _CELL
 
-
 def _cy(cell_y):
     return cell_y * _CELL
-
 
 def _trunc(text, max_len):
     if len(text) <= max_len:
         return text
     return text[:max_len - 1] + "~"
 
+# ── 3D bevel primitives ──────────────────────────────────────────
+def _bevel_up(display, x, y, w, h):
+    """Raised bevel (button up)."""
+    display.hline(x, y, w, W95_WHITE)
+    display.vline(x, y, h, W95_WHITE)
+    display.hline(x, y + h, w, W95_DARK)
+    display.vline(x + w, y, h, W95_DARK)
 
-# ── components ──────────────────────────────────────────────────────
-class Button(object):
-    """Styled button with dark background, border, and centered text."""
+def _bevel_down(display, x, y, w, h):
+    """Sunken bevel (button down / pressed)."""
+    display.hline(x, y, w, W95_DARK)
+    display.vline(x, y, h, W95_DARK)
+    display.hline(x, y + h, w, W95_WHITE)
+    display.vline(x + w, y, h, W95_WHITE)
+
+def _bevel_frame(display, x, y, w, h):
+    """Window frame bevel: outer dark, inner white."""
+    display.hline(x, y, w, W95_DARK)
+    display.vline(x, y, h, W95_DARK)
+    display.hline(x + 1, y + 1, w - 2, W95_WHITE)
+    display.vline(x + 1, y + 1, h - 2, W95_WHITE)
+    display.hline(x, y + h, w, W95_WHITE)
+    display.vline(x + w, y, h, W95_WHITE)
+    display.hline(x + 1, y + h - 1, w - 2, W95_DARK)
+    display.vline(x + w - 1, y + 1, h - 2, W95_DARK)
+
+# ── components ────────────────────────────────────────────────────
+class Button95(object):
+    """Win95-style 3D bevel button."""
 
     def __init__(self, cx, cy, text, callback=None, width=None):
         self.cx = cx
@@ -48,28 +62,29 @@ class Button(object):
         self.cw = width if width else len(text) + 4
         self.w = self.cw * _CELL
         self.h = 44
-        self.highlighted = False
+        self.pressed = False
 
     def render(self, display):
         x = _cx(self.cx)
         y = _cy(self.cy)
-        bg = BTN_BG if not self.highlighted else 0x55
-        fg = BTN_FG
-        border = BTN_BORDER if not self.highlighted else WHITE
+        bg = W95_GRAY
+        fg = W95_BLACK
 
-        # shadow edge (1px dark band at bottom/right for depth)
-        display.fill_rect(x + 2, y + self.h, self.w - 2, 1, 0x22)
-        display.fill_rect(x + self.w, y + 2, 1, self.h - 2, 0x22)
-        # body
+        # face
         display.fill_rect(x, y, self.w, self.h, bg)
-        # border
-        display.rect(x, y, self.w, self.h, border, 1)
+        # bevel
+        if self.pressed:
+            _bevel_down(display, x, y, self.w, self.h)
+            ox, oy = 1, 1
+        else:
+            _bevel_up(display, x, y, self.w, self.h)
+            ox, oy = 0, 0
 
         # centered text
         text_w = len(self.text)
         cell_cx = self.cx + (self.cw - text_w) // 2
         cell_cy = self.cy + (self.h - _CELL) // _CELL
-        display.draw_text(cell_cx, cell_cy, self.text, fg, bg)
+        display.draw_text(cell_cx + ox, cell_cy + oy, self.text, fg, bg)
 
     def contains(self, px, py):
         x = _cx(self.cx)
@@ -81,10 +96,10 @@ class Button(object):
             self.callback()
 
 
-class Label(object):
+class Label95(object):
     """Static text."""
 
-    def __init__(self, cx, cy, text, width=None, fg=TEXT, bg=BG):
+    def __init__(self, cx, cy, text, width=None, fg=W95_BLACK, bg=W95_WHITE):
         self.cx = cx
         self.cy = cy
         self.text = text
@@ -99,34 +114,41 @@ class Label(object):
         display.draw_text(self.cx, self.cy, txt, self.fg, self.bg)
 
 
-class TitleBar(object):
-    """Dark header bar with title text."""
+class TitleBar95(object):
+    """Win95 window title bar (blue, white text, close button)."""
 
-    def __init__(self, title, show_back=False, back_cb=None):
+    BAR_H = 48
+
+    def __init__(self, title, on_close=None):
         self.title = title
-        self.show_back = show_back
-        self.back_cb = back_cb
+        self.on_close = on_close
 
     def render(self, display):
         cols = display.cols
         w = display.width
-        # solid dark bar
-        display.fill_rect(0, 0, w, 48, TITLE_BG)
-        # accent line below
-        display.fill_rect(0, 47, w, 1, 0x66)
-        # title text (first row)
-        display.draw_text(1, 0, _trunc(self.title, cols - 2), TITLE_FG, TITLE_BG)
-        # subtitle row with thin separator
-        display.draw_text(1, 1, "─" * (cols - 2), 0x88, TITLE_BG)
+        # blue bar
+        display.fill_rect(0, 0, w, self.BAR_H, W95_BLUE)
+        # inset line at bottom for depth
+        display.fill_rect(0, self.BAR_H - 1, w, 1, W95_BLACK)
+        # title
+        display.draw_text(1, 0, _trunc(self.title, cols - 4), W95_WHITE, W95_BLUE)
+        display.draw_text(1, 1, _trunc(self.title, cols - 4), W95_WHITE, W95_BLUE)
+        # close button (X) on the right
+        close_x = cols - 4
+        display.fill_rect(_cx(close_x), 4, 3 * _CELL, self.BAR_H - 10, W95_GRAY)
+        _bevel_up(display, _cx(close_x), 4, 3 * _CELL, self.BAR_H - 10)
+        display.draw_text(close_x + 1, 0, "X", W95_BLACK, W95_GRAY)
+        self._close_rect = (_cx(close_x), 4, 3 * _CELL, self.BAR_H - 10)
 
     def tap(self, px, py):
-        if self.show_back and py < 48 and self.back_cb:
-            if px < 48:
-                self.back_cb()
+        if self.on_close and hasattr(self, '_close_rect'):
+            x, y, w, h = self._close_rect
+            if x <= px < x + w and y <= py < y + h:
+                self.on_close()
 
 
-# ── app / screen base ───────────────────────────────────────────────
-class App(object):
+# ── app / screen base ─────────────────────────────────────────────
+class App95(object):
     def __init__(self, display, discord):
         self.display = display
         self.discord = discord
@@ -156,7 +178,7 @@ class App(object):
         self.running = False
 
 
-class Screen(object):
+class Screen95(object):
     def __init__(self):
         self.app = None
         self.components = []
@@ -165,7 +187,16 @@ class Screen(object):
         self.components = []
 
     def render(self, display):
-        display.engine.clear(BG)
+        display.engine.clear(DESKTOP)
+        # small frame margin (2 cells top, 1 cell sides)
+        margin_x = _CELL
+        margin_y = 0
+        cx = margin_x
+        cy = margin_y
+        cw = display.width - margin_x * 2
+        ch = display.height - margin_y
+        display.fill_rect(cx, cy, cw, ch, W95_WHITE)
+        _bevel_frame(display, cx, cy, cw, ch)
         for comp in self.components:
             comp.render(display)
         display.refresh()
@@ -176,12 +207,12 @@ class Screen(object):
                 comp.tap(px, py)
 
 
-# ── screens ─────────────────────────────────────────────────────────
-class LoginScreen(Screen):
-    """Login screen with centered layout and quit button at bottom."""
+# ── screens ───────────────────────────────────────────────────────
+class LoginScreen95(Screen95):
+    """Login window on teal desktop."""
 
     def __init__(self, url, on_quit=None):
-        super(LoginScreen, self).__init__()
+        super(LoginScreen95, self).__init__()
         self.url = url
         self._on_quit = on_quit
 
@@ -197,35 +228,27 @@ class LoginScreen(Screen):
         d = self.app.display
         cols = d.cols
 
-        # Title
-        title = "KindleCord"
-        cx = (cols - len(title)) // 2
-        self.components.append(Label(cx, 2, title, fg=DARK))
+        self.components.append(TitleBar95("KindleCord Login",
+                                 on_close=self._on_quit))
 
-        # Subtitle
-        sub = "Discord para Kindle"
-        cx = (cols - len(sub)) // 2
-        self.components.append(Label(cx, 4, sub, fg=HINT))
-
-        # thin separator
-        sep = "─" * min(cols, 40)
-        cx = (cols - len(sep)) // 2
-        self.components.append(Label(cx, 5, sep, fg=LIGHT))
-
-        # URL block
-        self.components.append(Label(0, 8, "Abra no celular:", fg=TEXT))
+        y = 4
+        self.components.append(Label95(2, y, "Abra no celular:"))
+        y += 2
         url = self.url or "http://0.0.0.0:8080"
         cx = (cols - len(url)) // 2
-        self.components.append(Label(cx, 10, url, width=cols, fg=DARK))
-        self.components.append(Label(0, 12, "Cole seu token do Discord", fg=HINT))
-        self.components.append(Label(0, 14, "para fazer login.", fg=HINT))
-        self.components.append(Label(0, 16, "Aguardando token...", fg=DARK))
+        self.components.append(Label95(cx, y, url, width=cols - 4, fg=W95_BLUE))
+        y += 3
+        self.components.append(Label95(2, y, "Cole seu token do Discord"))
+        y += 2
+        self.components.append(Label95(2, y, "para fazer login."))
+        y += 2
+        self.components.append(Label95(2, y, "Aguardando token..."))
 
-        # Quit button at bottom
-        rows = d.rows
-        quit_btn = Button((cols - 8) // 2, rows - 3, "Sair",
-                          callback=self._on_quit, width=8)
-        self.components.append(quit_btn)
+        # buttons at bottom
+        btn_y = d.rows - 4
+        self.components.append(
+            Button95((cols - 8) // 2, btn_y, "Sair",
+                     callback=self._on_quit, width=8))
 
     def on_touch(self, px, py):
         for comp in self.components:
@@ -233,12 +256,12 @@ class LoginScreen(Screen):
                 comp.tap(px, py)
 
 
-class ListScreen(Screen):
-    """Scrollable list screen with styled items."""
+class ListScreen95(Screen95):
+    """Scrollable list with Win95 styling."""
 
     def __init__(self, title="", items=None, on_select=None, on_back=None,
                  back_label="Voltar", show_title_bar=True):
-        super(ListScreen, self).__init__()
+        super(ListScreen95, self).__init__()
         self._title = title
         self._items = items or []
         self._on_select = on_select
@@ -261,17 +284,17 @@ class ListScreen(Screen):
         row = 0
 
         if self._show_title_bar:
-            self.components.append(TitleBar(self._title))
+            self.components.append(TitleBar95(self._title,
+                                     on_close=self._on_back))
             row = 2
 
         items = self._items
         total = len(items)
-        max_visible = d.rows - row - 3
+        max_visible = d.rows - row - 4
         max_visible = min(max_visible, total - self._scroll)
 
-        # scroll-up indicator
         if self._scroll > 0:
-            self.components.append(_ScrollArrow(row, cols, up=True))
+            self.components.append(_ScrollArrow95(row, cols, up=True))
             row += 1
             max_visible -= 1
 
@@ -283,51 +306,48 @@ class ListScreen(Screen):
                 break
             txt = items[idx]
             if visible_n % 2 == 0:
-                self.components.append(_RowBg(row + visible_n, cols))
-            self.components.append(Label(1, row + visible_n, " " + txt,
-                                         width=cols - 2))
+                self.components.append(_RowBg95(row + visible_n, cols))
+            self.components.append(Label95(2, row + visible_n, "  " + txt,
+                                           width=cols - 4))
             visible_n += 1
 
-        # scroll-down indicator
         if visible_end < total:
-            self.components.append(_ScrollArrow(row + visible_n, cols, up=False))
+            self.components.append(_ScrollArrow95(row + visible_n, cols,
+                                                  up=False))
 
         if self._on_back:
             self.components.append(
-                Button(2, d.rows - 2, self._back_label,
-                       callback=self._on_back, width=len(self._back_label) + 4))
+                Button95(2, d.rows - 3, self._back_label,
+                         callback=self._on_back,
+                         width=len(self._back_label) + 4))
 
     def on_touch(self, px, py):
         d = self.app.display
         start_row = 2 if self._show_title_bar else 0
-        max_visible = d.rows - start_row - 3
+        max_visible = d.rows - start_row - 4
         total = len(self._items)
         row = py // _CELL
 
-        # back button
-        if row >= d.rows - 2 and self._on_back:
+        if row >= d.rows - 3 and self._on_back:
             self._on_back()
             return False
-
-        # title bar
         if row < 2 and self._show_title_bar:
+            for comp in self.components:
+                if hasattr(comp, 'tap'):
+                    comp.tap(px, py)
             return False
 
-        # scroll zone: top row inside content area
-        content_top = start_row
-        if self._scroll > 0 and row == content_top:
+        if self._scroll > 0 and row == start_row:
             self._scroll -= 1
             return True
 
-        # scroll zone: bottom visible content row
         if self._scroll + max_visible < total:
-            last_content = d.rows - 3  # one above back button
-            if row == last_content:
+            last = d.rows - 4
+            if row == last:
                 self._scroll += 1
                 return True
 
-        # item selection
-        if start_row <= row < d.rows - 2:
+        if start_row <= row < d.rows - 3:
             idx = self._scroll + (row - start_row)
             if 0 <= idx < total and self._on_select:
                 self._on_select(idx)
@@ -336,22 +356,11 @@ class ListScreen(Screen):
         return False
 
 
-class _RowBg(object):
-    """Alternating row background for list items."""
-
-    def __init__(self, cy, cols):
-        self.cy = cy
-        self.cols = cols
-
-    def render(self, display):
-        display.fill_rect(0, _cy(self.cy), display.width, _CELL, ITEM_BG)
-
-
-class MessageScreen(Screen):
-    """Screen showing messages with styled layout."""
+class MessageScreen95(Screen95):
+    """Messages with Win95 styling."""
 
     def __init__(self, title="", messages=None, on_back=None):
-        super(MessageScreen, self).__init__()
+        super(MessageScreen95, self).__init__()
         self._title = title
         self._messages = messages or []
         self._on_back = on_back
@@ -369,16 +378,16 @@ class MessageScreen(Screen):
         d = self.app.display
         cols = d.cols
 
-        self.components.append(TitleBar(self._title))
+        self.components.append(TitleBar95("#" + self._title,
+                                 on_close=self._on_back))
 
         msgs = self._messages
         total = len(msgs)
-        max_visible = (d.rows - 4) // 2
+        max_visible = (d.rows - 5) // 2
         row = 2
 
-        # scroll-up indicator
         if self._scroll > 0:
-            self.components.append(_ScrollArrow(row, cols, up=True))
+            self.components.append(_ScrollArrow95(row, cols, up=True))
             row += 2
             max_visible -= 1
 
@@ -389,44 +398,44 @@ class MessageScreen(Screen):
             msg = msgs[i]
             author = msg.get("author", {}).get("username", "?")
             content = msg.get("content", "")
-            self.components.append(Label(1, row + visible_n * 2, author,
-                                         fg=DARK))
-            content_line = " " + _trunc(content, cols - 3)
-            self.components.append(Label(1, row + visible_n * 2 + 1,
-                                         content_line, fg=TEXT))
+            self.components.append(Label95(2, row + visible_n * 2,
+                                           author, fg=W95_BLUE))
+            content_line = "  " + _trunc(content, cols - 5)
+            self.components.append(Label95(2, row + visible_n * 2 + 1,
+                                           content_line))
             if i < visible_end - 1:
-                self.components.append(_Divider(row + visible_n * 2 + 2,
-                                                cols))
+                self.components.append(
+                    _Divider95(row + visible_n * 2 + 2, cols))
             visible_n += 1
 
-        # scroll-down indicator
         if visible_end < total:
             sd_row = row + visible_n * 2
-            self.components.append(_ScrollArrow(sd_row, cols, up=False))
+            self.components.append(_ScrollArrow95(sd_row, cols, up=False))
 
         self.components.append(
-            Button(2, d.rows - 2, "  Voltar  ",
-                   callback=self._on_back, width=8))
+            Button95(2, d.rows - 3, "  OK  ",
+                     callback=self._on_back, width=6))
 
     def on_touch(self, px, py):
         d = self.app.display
         total = len(self._messages)
         row = py // _CELL
 
-        if row >= d.rows - 2 and self._on_back:
+        if row >= d.rows - 3 and self._on_back:
             self._on_back()
             return False
         if row < 2:
+            for comp in self.components:
+                if hasattr(comp, 'tap'):
+                    comp.tap(px, py)
             return False
 
-        max_visible = (d.rows - 4) // 2
-        # scroll up on first content row
+        max_visible = (d.rows - 5) // 2
         if self._scroll > 0 and row == 2:
             self._scroll -= 1
             return True
-        # scroll down on last content row
         if self._scroll + max_visible < total:
-            last = d.rows - 3
+            last = d.rows - 4
             if row == last:
                 self._scroll += 1
                 return True
@@ -434,20 +443,64 @@ class MessageScreen(Screen):
         return False
 
 
-class _Divider(object):
-    """Thin horizontal separator line."""
+class Dialog95(Screen95):
+    """Win95-style modal dialog box."""
 
+    def __init__(self, title, message, on_ok=None):
+        super(Dialog95, self).__init__()
+        self._title = title
+        self._message = message
+        self._on_ok = on_ok
+
+    def on_show(self, **kwargs):
+        for k in ('title', 'message', 'on_ok'):
+            if k in kwargs:
+                setattr(self, '_' + k, kwargs[k])
+        self._build_components()
+
+    def _build_components(self):
+        self.components = []
+        d = self.app.display
+        cols = d.cols
+
+        self.components.append(TitleBar95(self._title,
+                                 on_close=self._on_ok))
+
+        lines = self._message.split("\n")
+        y = 4
+        for line in lines:
+            cx = (cols - len(line)) // 2
+            self.components.append(Label95(max(2, cx), y, line))
+            y += 2
+
+        btn_y = y + 1
+        self.components.append(
+            Button95((cols - 6) // 2, btn_y, "  OK  ",
+                     callback=self._on_ok, width=6))
+
+
+# ── internal helpers ──────────────────────────────────────────────
+class _RowBg95(object):
+    def __init__(self, cy, cols):
+        self.cy = cy
+        self.cols = cols
+
+    def render(self, display):
+        display.fill_rect(_CELL, _cy(self.cy),
+                          display.width - _CELL * 2, _CELL, 0xF0)
+
+
+class _Divider95(object):
     def __init__(self, cy, cols):
         self.y = _cy(cy)
         self.w = cols * _CELL
 
     def render(self, display):
-        display.fill_rect(4, self.y, self.w - 8, 1, ITEM_BORDER)
+        display.fill_rect(_CELL, self.y, display.width - _CELL * 2, 1,
+                          W95_DARK)
 
 
-class _ScrollArrow(object):
-    """Up/down arrow indicator for scrolling."""
-
+class _ScrollArrow95(object):
     def __init__(self, cy, cols, up=True):
         self.cy = cy
         self.cols = cols
@@ -455,8 +508,9 @@ class _ScrollArrow(object):
 
     def render(self, display):
         y = _cy(self.cy)
-        w = self.cols * _CELL
-        display.fill_rect(0, y, w, _CELL, 0xEE)
+        w = display.width
+        display.fill_rect(_CELL, y, w - _CELL * 2, _CELL, W95_GRAY)
+        _bevel_down(display, _CELL, y, w - _CELL * 2, _CELL)
         label = "/\\" if self.up else "\\/"
         cx = (self.cols - 2) // 2
-        display.draw_text(cx, self.cy, label, 0x66, 0xEE)
+        display.draw_text(cx, self.cy, label, W95_BLACK, W95_GRAY)

@@ -34,7 +34,7 @@ code{background:#1e1e2e;padding:2px 6px;border-radius:4px;font-size:12px;color:#
 <div class="card">
 <h1>KindleCord</h1>
 <p>Paste your Discord token to log in on your Kindle.</p>
-<form method="POST" action="/token">
+<form method="POST" action="/">
 <input type="text" name="token" placeholder="Discord token" required autocomplete="off">
 <button type="submit">Log in</button>
 </form>
@@ -60,9 +60,10 @@ SUCCESS_PAGE = """<!DOCTYPE html>
 
 class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
     cb = None
+    ready = None  # threading.Event
 
     def do_GET(self):
-        if self.path == "/":
+        if self.path in ("/", "/token"):
             self._send(200, "text/html", PAGE.encode())
         elif self.path == "/favicon.ico":
             self._send(204, "text/plain", b"")
@@ -70,21 +71,20 @@ class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
             self._send(404, "text/plain", b"Not found")
 
     def do_POST(self):
-        if self.path == "/token":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-            if PY2:
-                body = body.decode("utf-8")
-            params = urlparse.parse_qs(body)
-            token = params.get("token", [""])[0].strip()
-            if token:
-                if self.cb:
-                    self.cb(token)
-                self._send(200, "text/html", SUCCESS_PAGE.encode())
-            else:
-                self._send(400, "text/plain", b"Missing token")
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        if PY2:
+            body = body.decode("utf-8")
+        params = urlparse.parse_qs(body)
+        token = params.get("token", [""])[0].strip()
+        if token:
+            self._log("token received, len=%d" % len(token))
+            if self.cb:
+                self.cb(token)
+            self._send(200, "text/html", SUCCESS_PAGE.encode())
         else:
-            self._send(404, "text/plain", b"Not found")
+            self._log("missing token (body=%r)" % body)
+            self._send(400, "text/plain", b"Missing token")
 
     def _send(self, code, ctype, data):
         self.send_response(code)
@@ -98,18 +98,24 @@ class _Handler(BaseHTTPServer.BaseHTTPRequestHandler):
         except (IOError, OSError):
             pass
 
-    def log_message(self, *args):
+    def _log(self, msg):
+        print("[SERVER] %s" % msg)
+
+    def log_message(self, fmt, *args):
         pass
 
 
-def start_server(host, port, callback):
+def start_server(host, port, callback, ready_event=None):
     _Handler.cb = callback
+    _Handler.ready = ready_event
     try:
         server = BaseHTTPServer.HTTPServer((host, port), _Handler)
         server.timeout = 1
         t = threading.Thread(target=server.serve_forever)
         t.daemon = True
         t.start()
+        if ready_event is not None:
+            ready_event.set()
         return server
     except (socket.error, IOError, OSError) as e:
         print("[SERVER] Failed to start: %s" % e)
