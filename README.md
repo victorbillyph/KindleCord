@@ -22,7 +22,7 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
 
 - **Jailbroken Kindle** (PW3, PW4, or similar)
 - **KOReader** installed (`/mnt/us/koreader/fbink` required for framebuffer access)
-- **Python 2.7.18** (stock on Kindle) — pure stdlib, no pip/PIL needed
+- **Python 2.7.18** pure stdlib, no pip/PIL needed
 
 ## Installation
 
