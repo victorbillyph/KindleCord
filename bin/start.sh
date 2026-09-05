@@ -1,5 +1,5 @@
 #!/bin/sh
-# KindleCord - Discord client for Kindle
+# KindleCord - Discord client for Kindle (Go binary)
 
 if [ "$(dirname "${0}")" != "/var/tmp" ]; then
     cp -pf "${0}" /var/tmp/kindlecord.sh
@@ -8,7 +8,6 @@ if [ "$(dirname "${0}")" != "/var/tmp" ]; then
 fi
 
 export LC_ALL="en_US.UTF-8"
-export PYTHONUNBUFFERED=1
 EXT_DIR="/mnt/us/extensions/KindleCord"
 LOG="$EXT_DIR/kindlecord.log"
 cd "$EXT_DIR" || exit 1
@@ -36,6 +35,25 @@ echo "Stopping awesome..." >> "$LOG"
 killall -STOP awesome 2>> "$LOG"
 usleep 250000
 
+# Prefer native Go binary
+if [ -x "$EXT_DIR/kindlecord" ]; then
+    echo "Using: $EXT_DIR/kindlecord (Go)" >> "$LOG"
+    "$EXT_DIR/kindlecord" >> "$LOG" 2>&1
+    EXIT=$?
+    echo "Exit code: $EXIT" >> "$LOG"
+    exit $EXIT
+fi
+
+if [ -x "$EXT_DIR/kindlecord-arm" ]; then
+    echo "Using: $EXT_DIR/kindlecord-arm (Go ARM)" >> "$LOG"
+    "$EXT_DIR/kindlecord-arm" >> "$LOG" 2>&1
+    EXIT=$?
+    echo "Exit code: $EXIT" >> "$LOG"
+    exit $EXIT
+fi
+
+# Fallback to Python (legacy)
+echo "Go binary not found, trying Python fallback..." >> "$LOG"
 for cmd in python3 python2.7 "/mnt/us/python/bin/python2.7" python; do
     if command -v "$cmd" >/dev/null 2>&1; then
         echo "Using: $cmd" >> "$LOG"

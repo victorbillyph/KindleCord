@@ -3,3 +3,7 @@ data/config.json
 __pycache__/
 *.pyc
 logs/
+build/
+/kindlecord-arm
+/kindlecord
+/tmp/

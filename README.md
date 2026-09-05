@@ -21,8 +21,7 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
 ## Requirements
 
 - **Jailbroken Kindle** (PW3, PW4, or similar)
-- **KOReader** installed (`/mnt/us/koreader/fbink` required for framebuffer access)
-- **Python 2.7.18** pure stdlib, no pip/PIL needed
+- **No Python needed** — v0.2.0+ is a native Go static binary (no KOReader/fbink required, direct `/dev/fb0` mmap). Legacy Python version still available as fallback.
 
 ## Installation
 
@@ -65,45 +64,40 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
   - `\\/` at bottom → tap to scroll down
 - **Exit →** double-press the physical power button
 
-## Project Structure
+## Project Structure (v0.2.0 Go)
 
 ```
 KindleCord/
+├── cmd/kindlecord/main.go   # Entry point
+├── internal/
+│   ├── display/             # mmap /dev/fb0 + font 8x8@3x (no fbink)
+│   ├── input/               # evdev touch + power watcher
+│   ├── discord/             # Discord REST v10 (fix Bot prefix)
+│   ├── server/              # net/http token server
+│   └── ui/                  # Win95 UI (scroll fix)
+├── kindlecord/              # Legacy Python (fallback)
 ├── bin/
-│   ├── start.sh          # Full-screen launcher
-│   └── stop.sh           # Cleanup
-├── kindlecord/
-│   ├── __init__.py
-│   ├── __main__.py       # Python entry point
-│   ├── main.py           # App flow, navigation, event loop
-│   ├── gfx.py            # Framebuffer rendering (FbInk subprocess)
-│   ├── display.py        # Thin display wrapper
-│   ├── ui.py             # UI framework (Button, Label, Screen, etc.)
-│   ├── input.py          # Touch input + PowerWatcher
-│   ├── discord.py        # Discord REST API client
-│   └── server.py         # HTTP server for token paste
-├── data/                 # Runtime data (token, config)
-├── config.xml            # KUAL extension metadata
-├── menu.json             # KUAL menu entry
-├── web/                  # (future) web UI assets
+│   ├── start.sh             # Prefers Go binary, fallback Python
+│   └── stop.sh
+├── build/                   # CI artifacts (kindlecord, kindlecord-arm)
+├── .github/workflows/build.yml
+├── data/                    # Runtime data (token, config)
+├── config.xml
+├── menu.json
 └── README.md
 ```
 
 ## How It Works
 
-### Rendering
+### Rendering (v0.2.0 Go)
 
-KindleCord renders directly to the framebuffer by shelling out to KOReader's **FbInk** binary (`/mnt/us/koreader/fbink`). All drawing — text, rectangles, fills — goes through `fbink` subprocess calls. There is no in-memory pixel buffer; everything is rendered on-the-fly to the hardware framebuffer.
-
-The display is treated as a **24×24 pixel character grid** using FbInk's VGA font at 3× scale (`-S 3`), giving 60 columns × 44 rows of usable text area.
+Direct `mmap("/dev/fb0")` with in-RAM buffer (no fork per draw). 8x8 bitmap font scaled 3x to 24x24 cells (60x44 grid at 1448x1072). Fallback to `fbink -W GC16` if available, else `MXCFB_SEND_UPDATE` ioctl.
 
 ### Display Architecture
 
 ```
-Python (UI) → GfxEngine.draw_text/fill_rect → subprocess fbink → /dev/fb0 → EPDC → e-ink panel
+Go (UI) → Display.FillRect/DrawText → []byte buffer → /dev/fb0 mmap → GC16 refresh → e-ink panel
 ```
-
-A full `GC16` refresh is triggered once per screen render (no partial updates).
 
 ### Touch Input
 
@@ -117,12 +111,12 @@ A `PowerWatcher` thread monitors `/dev/input/event0` for power button presses. T
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Python 2.7.18 (stock Kindle) |
-| Rendering | FbInk (subprocess to `/mnt/us/koreader/fbink`) |
-| Font | VGA 8×8 bitmap, 3× scaled (24×24 cells) |
+| Language | **Go 1.21** static binary (no Python) |
+| Rendering | `mmap /dev/fb0` direct (fbink fallback) |
+| Font | 8×8 bitmap, 3× scaled (24×24 cells) |
 | Display | 1448×1072 landscape (Kindle PW3) |
-| Touch | `/dev/input/event1` (MT protocol) |
-| Network | Discord REST API v10, HTTP server on port 8080 |
+| Touch | `/dev/input/event1` evdev, single-FD |
+| Network | Discord REST API v10, `net/http` on :8080 |
 | Frame buffer | 8-bit grayscale, GC16 waveform |
 
 ## Limitations
