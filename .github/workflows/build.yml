@@ -42,9 +42,11 @@ jobs:
 
       - name: Package Kindle extension
         run: |
-          cp build/kindlecord-arm kindlecord
-          zip -r build/KindleCord.zip kindlecord bin/ config.xml menu.json README.md data/config.example.json -x "*.git*" "build/*" "data/token.txt"
-          rm kindlecord
+          mkdir -p /tmp/staging/KindleCord
+          cp build/kindlecord-arm /tmp/staging/KindleCord/kindlecord
+          cp -r bin config.xml menu.json README.md /tmp/staging/KindleCord/
+          cp data/config.example.json /tmp/staging/KindleCord/data.example.json
+          (cd /tmp/staging && zip -r $GITHUB_WORKSPACE/build/KindleCord.zip KindleCord/)
           ls -lh build/
 
       - name: Upload artifacts
