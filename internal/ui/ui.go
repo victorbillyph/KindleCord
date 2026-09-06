@@ -479,25 +479,28 @@ func (s *LoginScreen) build() {
 		urlStr = "http://0.0.0.0:8080"
 	}
 
-	// Extract IP for display
-	ip := ""
+	// Extract IP and port for display
+	ip := "0.0.0.0"
+	port := "8080"
 	if u, err := url.Parse(urlStr); err == nil {
 		ip = u.Hostname()
+		if u.Port() != "" {
+			port = u.Port()
+		}
+	}
+	if ip == "0.0.0.0" {
+		ip = "your-kindle-ip"
 	}
 
 	y := 80
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Send your Discord token", FT_TITLE, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Access on Browser to Configure", FT_TITLE, FG_BLACK))
 	y += 38
 
-	// Large URL box
+	// URL line
+	displayURL := "http://" + ip + ":" + port
 	contentW := d.Width - CONTENT_X - 24
-	s.items = append(s.items, NewBox(CONTENT_X+12, y, contentW, 60, urlStr, FT_TITLE, BG_DM, FG_WHITE))
-	y += 70
-
-	if ip != "" {
-		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "IP: "+ip, FT_LABEL, FG_MUTED))
-		y += 30
-	}
+	s.items = append(s.items, NewBox(CONTENT_X+12, y, contentW, 48, displayURL, FT_TITLE, BG_DM, FG_WHITE))
+	y += 58
 
 	if s.SSHInfo != "" {
 		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Or SSH:", FT_SMALL, FG_MUTED))
@@ -509,14 +512,13 @@ func (s *LoginScreen) build() {
 	y += 10
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Open the URL above on your computer/phone", FT_LABEL, FG_BLACK))
 	y += 26
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "(same Wi-Fi) → paste token → Log in", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "(same Wi-Fi) \u2192 paste token \u2192 Log in", FT_LABEL, FG_BLACK))
 	y += 30
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Waiting for token...", FT_SMALL, FG_MUTED))
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
 	s.items = append(s.items, NewButton(btnX, d.Height-70, "Exit", s.OnQuit))
 }
-
 func (s *LoginScreen) Render(d *display.Display) {
 	d.Clear(BG_CONTENT)
 	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
