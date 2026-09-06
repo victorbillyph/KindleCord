@@ -50,20 +50,34 @@ chmod +x "$EXT_DIR/kindlecord" 2>> "$LOG"
 chmod +x "$EXT_DIR/kindlecord-arm" 2>> "$LOG"
 chmod +x "$EXT_DIR/bin/fbink" 2>> "$LOG"
 
+# Launch the app, restarting it when it exits with code 42
+# ("reset to setup": token was removed and the login screen must appear again).
+run_loop() {
+    while true; do
+        "$1" >> "$LOG" 2>&1
+        EXIT=$?
+        echo "Exit code: $EXIT" >> "$LOG"
+        if [ "$EXIT" != "42" ]; then
+            return "$EXIT"
+        fi
+        echo "Reset requested, restarting for setup..." >> "$LOG"
+        rm -f "$LOG"
+        sleep 1
+    done
+}
+
 if [ -f "$EXT_DIR/kindlecord" ]; then
     echo "Using: $EXT_DIR/kindlecord (Go)" >> "$LOG"
-    "$EXT_DIR/kindlecord" >> "$LOG" 2>&1
+    run_loop "$EXT_DIR/kindlecord"
     EXIT=$?
-    echo "Exit code: $EXIT" >> "$LOG"
-    exit $EXIT
+    exit "$EXIT"
 fi
 
 if [ -f "$EXT_DIR/kindlecord-arm" ]; then
     echo "Using: $EXT_DIR/kindlecord-arm (Go ARM)" >> "$LOG"
-    "$EXT_DIR/kindlecord-arm" >> "$LOG" 2>&1
+    run_loop "$EXT_DIR/kindlecord-arm"
     EXIT=$?
-    echo "Exit code: $EXIT" >> "$LOG"
-    exit $EXIT
+    exit "$EXIT"
 fi
 
 echo "Go binary not found, trying Python fallback..." >> "$LOG"

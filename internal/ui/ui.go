@@ -57,14 +57,15 @@ type Component interface {
 // ── Sidebar ──────────────────────────────────────────────────────────
 
 type Sidebar struct {
-	Servers       []string
-	SelectedDM    bool
-	ServerIdx     int
-	OnDMClick     func()
-	OnServerClick func(idx int)
-	OnUpdateClick func()
-	contentH      int
-	scroll        int
+	Servers         []string
+	SelectedDM      bool
+	ServerIdx       int
+	OnDMClick       func()
+	OnServerClick   func(idx int)
+	OnUpdateClick   func()
+	OnSettingsClick func()
+	contentH        int
+	scroll          int
 
 	iconSize  int
 	iconGap   int
@@ -72,10 +73,11 @@ type Sidebar struct {
 }
 
 const (
-	sbIconSize = 44
-	sbIconGap  = 12
-	sbDMY      = 16
-	sbDividerY = 80
+	sbIconSize  = 44
+	sbIconGap   = 12
+	sbSettingsY = 16
+	sbDMY       = 64
+	sbDividerY  = 120
 )
 
 func (s *Sidebar) iconY(i int) int {
@@ -96,6 +98,11 @@ func (s *Sidebar) Render(d *display.Display) {
 		h = s.contentH
 	}
 	d.FillRect(0, 0, SIDEBAR_W, h, BG_SIDEBAR)
+
+	// settings icon (top)
+	d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, sbSettingsY, sbIconSize, sbIconSize, sbIconSize/2, BG_SIDEBAR)
+	d.FillRoundRect((SIDEBAR_W-sbIconSize+4)/2, sbSettingsY+2, sbIconSize-4, sbIconSize-4, (sbIconSize-4)/2, BG_ICON)
+	s.drawGear(d, SIDEBAR_W/2, sbSettingsY+sbIconSize/2, 24)
 
 	// DM icon
 	var dmBg uint8 = BG_SIDEBAR
@@ -163,8 +170,29 @@ func (s *Sidebar) Render(d *display.Display) {
 	}
 }
 
+func (s *Sidebar) drawGear(d *display.Display, cx, cy, size int) {
+	half := size / 2
+	tooth := size / 5
+	halfTooth := tooth / 2
+	tall := size / 3
+	// four teeth
+	d.FillRect(cx-halfTooth, cy-half, tooth, tall, FG_WHITE)
+	d.FillRect(cx-halfTooth, cy+half-tall, tooth, tall, FG_WHITE)
+	d.FillRect(cx-half, cy-halfTooth, tall, tooth, FG_WHITE)
+	d.FillRect(cx+half-tall, cy-halfTooth, tall, tooth, FG_WHITE)
+	// wheel + hole
+	d.FillRoundRect(cx-size/4, cy-size/4, size/2, size/2, size/4, FG_WHITE)
+	d.FillRoundRect(cx-size/10, cy-size/10, size/5, size/5, 2, BG_ICON)
+}
+
 func (s *Sidebar) HandleTouch(x, y int) {
 	if x >= SIDEBAR_W {
+		return
+	}
+	if y >= sbSettingsY && y <= sbSettingsY+sbIconSize {
+		if s.OnSettingsClick != nil {
+			s.OnSettingsClick()
+		}
 		return
 	}
 	if y >= sbDMY && y <= sbDMY+sbIconSize {
@@ -523,6 +551,11 @@ func (s *HomeScreen) OnShow(args map[string]interface{}) {
 			s.Sidebar.OnUpdateClick = f
 		}
 	}
+	if v, ok := args["on_settings_click"]; ok {
+		if f, ok := v.(func()); ok {
+			s.Sidebar.OnSettingsClick = f
+		}
+	}
 	if v, ok := args["title"]; ok {
 		if vv, ok := v.(string); ok {
 			s.Title = vv
@@ -543,6 +576,11 @@ func (s *HomeScreen) OnShow(args map[string]interface{}) {
 				idx := i
 				s.Items[i].Callback = func() { f(idx) }
 			}
+		}
+	}
+	if v, ok := args["on_back"]; ok {
+		if f, ok := v.(func()); ok {
+			s.OnBack = f
 		}
 	}
 	s.scroll = 0
@@ -623,6 +661,9 @@ func (s *HomeScreen) OnTouch(x, y int) bool {
 	}
 
 	if y < HEADER_H {
+		if s.OnBack != nil {
+			s.OnBack()
+		}
 		return false
 	}
 
@@ -723,6 +764,11 @@ func (s *MessageScreen) OnShow(args map[string]interface{}) {
 	if v, ok := args["on_update_click"]; ok {
 		if f, ok := v.(func()); ok {
 			s.Sidebar.OnUpdateClick = f
+		}
+	}
+	if v, ok := args["on_settings_click"]; ok {
+		if f, ok := v.(func()); ok {
+			s.Sidebar.OnSettingsClick = f
 		}
 	}
 	if v, ok := args["title"]; ok {
@@ -936,11 +982,12 @@ func (s *LoadingScreen) OnTouch(x, y int) bool { return false }
 // ── Dialog ───────────────────────────────────────────────────────────
 
 type Dialog struct {
-	App     *App
-	Title   string
-	Message string
-	OnOK    func()
-	items   []Component
+	App      *App
+	Title    string
+	Message  string
+	OnOK     func()
+	OnCancel func()
+	items    []Component
 }
 
 func NewDialog(title, message string, onOK func()) *Dialog {
@@ -965,6 +1012,11 @@ func (d2 *Dialog) OnShow(args map[string]interface{}) {
 			d2.OnOK = vv
 		}
 	}
+	if v, ok := args["on_cancel"]; ok {
+		if vv, ok := v.(func()); ok {
+			d2.OnCancel = vv
+		}
+	}
 	d2.build()
 }
 
@@ -978,8 +1030,14 @@ func (d2 *Dialog) build() {
 		y += 26
 	}
 
-	btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
-	d2.items = append(d2.items, NewButton(btnX, y+12, "OK", d2.OnOK))
+	if d2.OnCancel != nil {
+		btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
+		d2.items = append(d2.items, NewButton(btnX-85, y+12, "Cancel", d2.OnCancel))
+		d2.items = append(d2.items, NewButton(btnX+45, y+12, "OK", d2.OnOK))
+	} else {
+		btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
+		d2.items = append(d2.items, NewButton(btnX, y+12, "OK", d2.OnOK))
+	}
 }
 
 func (d2 *Dialog) Render(d *display.Display) {

@@ -286,6 +286,9 @@ func main() {
 	homeScreen := ui.NewHomeScreen()
 	app.Add("home", homeScreen)
 
+	settingsScreen := ui.NewHomeScreen()
+	app.Add("settings", settingsScreen)
+
 	msgScreen := ui.NewMessageScreen()
 	app.Add("messages", msgScreen)
 
@@ -299,6 +302,8 @@ func main() {
 	var showChannels func(int)
 	var showStatus func(title, message string)
 	var sidebarArgs func() map[string]interface{}
+	var showSettings func()
+	var resetRequested bool
 
 	showStatus = func(title, message string) {
 		statusDialog.OnOK = func() {
@@ -380,7 +385,38 @@ func main() {
 			"on_update_click": func() {
 				checkForUpdates()
 			},
+			"on_settings_click": func() {
+				showSettings()
+			},
 		}
+	}
+
+	showSettings = func() {
+		args := sidebarArgs()
+		args["title"] = "Settings"
+		args["items"] = []string{
+			"Check for updates",
+			"Reset app to setup",
+		}
+		args["on_back"] = func() { showDMs() }
+		args["on_select"] = func(idx int) {
+			if idx == 0 {
+				checkForUpdates()
+			} else if idx == 1 {
+				resetDialog := ui.NewDialog("Reset to Setup", "Remove your token and restart?\nYou will need to log in again.", func() {
+					resetRequested = true
+					app.Stop()
+				})
+				app.Add("reset_confirm", resetDialog)
+				app.Show("reset_confirm", map[string]interface{}{
+					"title":     "Reset to Setup",
+					"message":   "Remove your token and restart?\nYou will need to log in again.",
+					"on_ok":     resetDialog.OnOK,
+					"on_cancel": func() { showSettings() },
+				})
+			}
+		}
+		app.Show("settings", args)
 	}
 
 	showDMs = func() {
@@ -543,6 +579,13 @@ func main() {
 			log.Printf("[INPUT] main touch %d,%d", ev.X, ev.Y)
 			app.Touch(ev.X, ev.Y)
 		}
+	}
+
+	if resetRequested {
+		log.Println("[MAIN] reset requested, removing token and restarting for setup")
+		_ = os.Remove(tokenFile)
+		// start.sh restarts on exit code 42
+		os.Exit(42)
 	}
 
 	disp.Clear(0xFF)
