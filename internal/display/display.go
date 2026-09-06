@@ -11,7 +11,10 @@ import (
 	"unsafe"
 )
 
-// Display handles framebuffer access with fbink (Kindle) or direct mmap/sim.
+// Display handles framebuffer access through fbink (Kindle) or a sim buffer (PC).
+// On Kindle every primitive goes through fbink, which compensates the panel
+// rotation (rotate=3) when writing to memory. Writing to /dev/fb0 directly
+// does NOT compensate, which is why text appeared mirrored on screen.
 type Display struct {
 	Width  int
 	Height int
@@ -20,9 +23,9 @@ type Display struct {
 	Cols   int
 	Rows   int
 
-	buf      []byte
-	mmaped   bool
-	fd       *os.File
+	// Sim buffer (PC / no fbink). Filled for debug dumps.
+	buf []byte
+
 	fbink    string
 	simulate bool
 	useFbink bool
@@ -73,20 +76,13 @@ func getFbSizeIoctl() (w, h, stride, rotate int, ok bool) {
 	defer f.Close()
 	const FBIOGET_VSCREENINFO = 0x4600
 	var info [160]byte
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), FBIOGET_VSCREENINFO, uintptr(unsafe.Pointer(&info[0])))
-	if errno != 0 {
+	if err := ioctlFBIOInfo(f, &info); err != nil {
 		return 0, 0, 0, 0, false
 	}
 	le := func(b []byte) int { return int(b[0]) | int(b[1])<<8 | int(b[2])<<16 | int(b[3])<<24 }
 	w = le(info[0:4])
 	h = le(info[4:8])
-	// xres_virtual == line_length in bytes for 8bpp (equals row stride)
 	stride = le(info[8:12])
-	// rotate field (struct fb_var_screeninfo offset 136 on 32-bit ARM)
-	// xres(0) yres(4) xres_virt(8) yres_virt(12) xoff(16) yoff(20) bpp(24) grayscale(28)
-	// red(32) green(44) blue(56) transp(68) nonstd(80) activate(84) height(88) width(92)
-	// accel(96) pixclock(100) lm(104) rm(108) um(112) lom(116) hsync(120) vsync(124)
-	// sync(128) vmode(132) rotate(136) colorspace(140) reserved(144)
 	rotate = le(info[136:140])
 	if w > 0 && h > 0 && w < 5000 && h < 5000 {
 		return w, h, stride, rotate, true
@@ -94,9 +90,17 @@ func getFbSizeIoctl() (w, h, stride, rotate int, ok bool) {
 	return 0, 0, 0, 0, false
 }
 
+func ioctlFBIOInfo(f *os.File, info *[160]byte) error {
+	const FBIOGET_VSCREENINFO = 0x4600
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), FBIOGET_VSCREENINFO, uintptr(unsafe.Pointer(info)))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
 func detectFBParams() (w, h, stride, bpp int) {
-	w, h, stride, bpp = 1448, 1072, 1448, 8
-	// Try ioctl first (most reliable on Kindle)
+	w, h, stride, bpp = 1072, 1448, 1088, 8
 	if ww, hh, ss, rot, ok := getFbSizeIoctl(); ok {
 		w, h = ww, hh
 		if ss > 0 {
@@ -139,101 +143,55 @@ func detectFBParams() (w, h, stride, bpp int) {
 			bpp = v
 		}
 	}
-	if stride < w && bpp == 8 {
+	if stride < w {
 		stride = w
 	}
 	return
 }
 
-// New creates a Display. Uses fbink on Kindle, mmap/sim on PC.
+// New creates a Display. On Kindle, routes everything through fbink.
 func New() *Display {
 	w, h, stride, bpp := detectFBParams()
-	// Keep 2-cell margin (48px) for safe area to avoid off-screen clipping
-	safeW := w - 16
-	safeH := h - 16
-	if safeW < w/2 {
-		safeW = w
-		safeH = h
-	}
 	d := &Display{
 		Width:  w,
 		Height: h,
 		Stride: stride,
 		BPP:    bpp,
-		Cols:   safeW / CellSize,
-		Rows:   safeH / CellSize,
+		Cols:   w / CellSize,
+		Rows:   h / CellSize,
 		fbink:  findFbink(),
 	}
 	if d.fbink != "" {
-		// Kindle with fbink - use offscreen buffer + fbink refresh (AA)
-		d.useFbink = true
-		// Try to open fb0 for direct write
-		if f, err := os.OpenFile("/dev/fb0", os.O_RDWR, 0); err == nil {
-			d.fd = f
-			// Try mmap for fast blit, fallback to write
-			size := w * h
-			if bpp == 8 {
-				size = stride * h
-				if size < w*h {
-					size = w * h
-				}
-			} else {
-				size = w * h * 4
-			}
-			if mmap, err := syscall.Mmap(int(f.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED); err == nil {
-				d.buf = mmap
-				d.mmaped = true
-				d.Stride = stride
-				if d.Stride < w {
-					d.Stride = w
-				}
-				log.Printf("[DISPLAY] fbink+AA mmap %s %dx%d stride=%d bpp=%d cols=%d rows=%d size=%d", d.fbink, w, h, stride, bpp, d.Cols, d.Rows, size)
-				return d
-			}
+		if d.Cols < 1 {
+			d.Cols = 44
 		}
-		// Fallback: offscreen buffer in RAM, will write via fd on Refresh
-		d.buf = make([]byte, w*h)
-		d.Stride = w
-		d.BPP = 8
-		log.Printf("[DISPLAY] fbink+AA offscreen %s %dx%d cols=%d rows=%d", d.fbink, w, h, d.Cols, d.Rows)
+		if d.Rows < 1 {
+			d.Rows = 60
+		}
+		d.useFbink = true
+		log.Printf("[DISPLAY] fbink mode %s %dx%d cols=%d rows=%d", d.fbink, w, h, d.Cols, d.Rows)
 		return d
 	}
 
-	// PC / no fbink - try mmap
-	f, err := os.OpenFile("/dev/fb0", os.O_RDWR, 0)
-	if err != nil {
-		log.Printf("[DISPLAY] /dev/fb0 not available (%v), sim mode %dx%d cols=%d rows=%d", err, w, h, d.Cols, d.Rows)
-		d.simulate = true
-		d.buf = make([]byte, w*h*4)
-		d.BPP = 32
-		d.Stride = w * 4
-		return d
-	}
-	d.fd = f
-	var size int
-	if bpp == 8 {
-		size = stride * h
-	} else if bpp == 32 || bpp == 24 {
-		size = stride * h
-	} else {
-		size = w * h * 4
-	}
-	if size <= 0 {
-		size = w * h * 4
-	}
-	mmap, err := syscall.Mmap(int(f.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if err != nil {
-		log.Printf("[DISPLAY] mmap fail %v, using sim buffer", err)
-		d.simulate = true
-		d.buf = make([]byte, w*h*4)
-		d.BPP = 32
-		d.Stride = w * 4
-	} else {
-		d.buf = mmap
-		d.mmaped = true
-		log.Printf("[DISPLAY] mmap ok %dx%d stride=%d bpp=%d cols=%d rows=%d size=%d", w, h, stride, bpp, d.Cols, d.Rows, size)
-	}
+	// PC / no fbink - simulate with an 8bpp buffer of the same layout.
+	d.simulate = true
+	d.buf = make([]byte, w*h)
+	d.BPP = 8
+	d.Stride = w
+	log.Printf("[DISPLAY] sim mode %dx%d cols=%d rows=%d (no fbink)", w, h, d.Cols, d.Rows)
 	return d
+}
+
+func (d *Display) runFB(args ...string) error {
+	if d.fbink == "" {
+		return nil
+	}
+	cmd := exec.Command(d.fbink, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("[DISPLAY] fbink %v err=%v out=%s", args, err, strings.TrimSpace(string(out)))
+		return err
+	}
+	return nil
 }
 
 func (d *Display) clipRect(x, y, w, h int) (int, int, int, int) {
@@ -257,97 +215,44 @@ func (d *Display) clipRect(x, y, w, h int) (int, int, int, int) {
 	return x, y, w, h
 }
 
-func (d *Display) setPixel(x, y int, color uint8) {
-	if x < 0 || x >= d.Width || y < 0 || y >= d.Height {
-		return
-	}
-	if d.BPP == 8 {
-		off := y*d.Stride + x
-		if off < len(d.buf) {
-			d.buf[off] = color
-		}
-	} else {
-		off := y*d.Stride + x*4
-		if off+3 < len(d.buf) {
-			d.buf[off] = color
-			d.buf[off+1] = color
-			d.buf[off+2] = color
-			if len(d.buf) > off+3 {
-				d.buf[off+3] = 0xFF
-			}
-		}
-	}
-}
-
 // Clear fills entire screen
 func (d *Display) Clear(color uint8) {
-	// If we have a buffer (mmap or offscreen), write to it for AA
-	if d.buf != nil {
-		if d.BPP == 32 {
-			for i := 0; i < len(d.buf); i += 4 {
-				d.buf[i] = color
-				d.buf[i+1] = color
-				d.buf[i+2] = color
-				if i+3 < len(d.buf) {
-					d.buf[i+3] = 0xFF
-				}
-			}
-		} else if d.BPP == 8 {
-			for i := 0; i < len(d.buf) && i < d.Stride*d.Height; i++ {
-				d.buf[i] = color
-			}
-		} else {
-			for y := 0; y < d.Height; y++ {
-				for x := 0; x < d.Width; x++ {
-					d.setPixel(x, y, color)
-				}
-			}
-		}
+	if d.useFbink {
+		// -k with -B fills the whole screen in the background color
+		_ = d.runFB("-q", "-k", "-B", grayName(color), "-b")
 		return
 	}
-	if d.useFbink {
-		cname := grayName(color)
-		cmd := exec.Command(d.fbink, "-q", "-k", "-B", cname, "-b")
-		_ = cmd.Run()
-		return
+	if d.buf != nil {
+		for i := 0; i < len(d.buf); i++ {
+			d.buf[i] = color
+		}
 	}
 }
 
+// FillRect fills a pixel rectangle
 func (d *Display) FillRect(x, y, w, h int, color uint8) {
 	x, y, w, h = d.clipRect(x, y, w, h)
 	if w <= 0 || h <= 0 {
 		return
 	}
-	if d.buf != nil {
-		if d.BPP == 8 {
-			for yy := y; yy < y+h; yy++ {
-				off := yy*d.Stride + x
-				for xx := 0; xx < w; xx++ {
-					if off+xx < len(d.buf) {
-						d.buf[off+xx] = color
-					}
-				}
-			}
-		} else {
-			for yy := y; yy < y+h; yy++ {
-				for xx := x; xx < x+w; xx++ {
-					d.setPixel(xx, yy, color)
+	if d.useFbink {
+		region := fmt.Sprintf("top=%d,left=%d,width=%d,height=%d", y, x, w, h)
+		_ = d.runFB("-q", "-k", region, "-B", grayName(color), "-b")
+		return
+	}
+	if d.buf != nil && d.BPP == 8 {
+		for yy := y; yy < y+h; yy++ {
+			off := yy*d.Stride + x
+			for xx := 0; xx < w; xx++ {
+				if off+xx < len(d.buf) {
+					d.buf[off+xx] = color
 				}
 			}
 		}
-		return
-	}
-	if d.useFbink {
-		cname := grayName(color)
-		region := fmt.Sprintf("top=%d,left=%d,width=%d,height=%d", y, x, w, h)
-		cmd := exec.Command(d.fbink, "-q", "-k", region, "-B", cname, "-b")
-		_ = cmd.Run()
-		return
 	}
 }
 
 func (d *Display) HLine(x, y, w int, color uint8) {
-	// use FillRect which handles fbink
 	d.FillRect(x, y, w, 1, color)
 }
 
@@ -365,14 +270,10 @@ func (d *Display) Rect(x, y, w, h int, color uint8, thickness int) {
 }
 
 func (d *Display) Pixel(x, y int, color uint8) {
-	if d.useFbink {
-		d.FillRect(x, y, 1, 1, color)
-		return
-	}
-	d.setPixel(x, y, color)
+	d.FillRect(x, y, 1, 1, color)
 }
 
-// DrawText draws text at cell coordinates with fg/bg - bitmap for now (AA disabled for debug)
+// DrawText draws text at cell coordinates with fg/bg via fbink.
 func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if cx >= d.Cols || cy >= d.Rows || text == "" {
 		return
@@ -384,21 +285,15 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if len(text) > maxChars {
 		text = text[:maxChars]
 	}
-	// AA disabled for striped debug - use bitmap
-	// if d.buf != nil && goFontRegular != nil {
-	// 	d.DrawTextAA(cx, cy, text, fg, bg, false)
-	// 	return
-	// }
-	if d.useFbink && d.buf == nil {
+	if d.useFbink {
 		px := cx * CellSize
 		py := cy * CellSize
-		fgName := grayName(fg)
-		bgName := grayName(bg)
-		cmd := exec.Command(d.fbink, "-q", "-b", "-S", "3", "-F", "VGA", "-C", fgName, "-B", bgName, "-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py), text)
-		if err := cmd.Run(); err != nil {
-			cmd2 := exec.Command(d.fbink, "-q", "-b", "-S", "3", "-C", fgName, "-B", bgName, "-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py), text)
-			_ = cmd2.Run()
-		}
+		// Draw from bottom-left (-1px) so the 24px cell aligns like the old engine.
+		args := []string{"-q", "-b", "-S", "3", "-F", "VGA",
+			"-C", grayName(fg), "-B", grayName(bg),
+			"-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py)}
+		// fbink treats text arg after options as the string to print.
+		_ = d.runFB(append(args, text)...)
 		return
 	}
 	px := cx * CellSize
@@ -432,27 +327,21 @@ func (d *Display) drawChar(x, y int, ch byte, fg, bg uint8) {
 	}
 }
 
-// InvertRect inverts region
+// InvertRect inverts region (approximated as dark fill in fbink mode)
 func (d *Display) InvertRect(x, y, w, h int) {
 	if d.useFbink {
-		d.FillRect(x, y, w, h, 0x00)
+		d.FillRect(x, y, w, h, 0x33)
 		return
 	}
 	x, y, w, h = d.clipRect(x, y, w, h)
+	if d.buf == nil {
+		return
+	}
 	for yy := y; yy < y+h; yy++ {
 		for xx := x; xx < x+w; xx++ {
-			if d.BPP == 8 {
-				off := yy*d.Stride + xx
-				if off < len(d.buf) {
-					d.buf[off] = 0xFF - d.buf[off]
-				}
-			} else {
-				off := yy*d.Stride + xx*4
-				if off+2 < len(d.buf) {
-					d.buf[off] = 0xFF - d.buf[off]
-					d.buf[off+1] = 0xFF - d.buf[off+1]
-					d.buf[off+2] = 0xFF - d.buf[off+2]
-				}
+			off := yy*d.Stride + xx
+			if off < len(d.buf) {
+				d.buf[off] = 0xFF - d.buf[off]
 			}
 		}
 	}
@@ -460,75 +349,19 @@ func (d *Display) InvertRect(x, y, w, h int) {
 
 // Refresh triggers e-ink update.
 func (d *Display) Refresh() {
-	if d.simulate {
+	if d.useFbink {
+		_ = d.runFB("-q", "-s", "-f", "-W", "GC16", "-w")
 		return
 	}
-	// If we have offscreen buffer (fbink+AA without mmap), blit to fb first
-	if d.useFbink && !d.mmaped && d.buf != nil && d.fd != nil {
-		// Write buffer to /dev/fb0
-		if d.BPP == 8 {
-			// offscreen stride == Width
-			if d.Stride == d.Width {
-				_, _ = d.fd.Seek(0, 0)
-				_, _ = d.fd.Write(d.buf)
-			} else {
-				for y := 0; y < d.Height; y++ {
-					off := y * d.Stride
-					_, _ = d.fd.Seek(int64(off), 0)
-					start := y * d.Width
-					end := start + d.Width
-					if end <= len(d.buf) {
-						_, _ = d.fd.Write(d.buf[start:end])
-					}
-				}
-			}
-		}
-	}
-	if d.fbink != "" {
-		cmd := exec.Command(d.fbink, "-q", "-s", "-f", "-W", "GC16", "-w")
-		_ = cmd.Run()
-		return
-	}
-	if d.fd != nil {
-		const mxcfbSendUpdate = 0x4044462E
-		type mxcfbUpdateData struct {
-			UpdateRegion struct{ Top, Left, Width, Height uint32 }
-			WaveformMode         uint32
-			UpdateMode           uint32
-			UpdateMarker         uint32
-			Temp                 int32
-			Flags                uint32
-			DitherMode           int32
-			QuantMode            int32
-			AltBufferData        struct{ PhysAddr uint32; Width, Height uint32; AltUpdateRegion struct{ Top, Left, Width, Height uint32 } }
-		}
-		var upd mxcfbUpdateData
-		upd.UpdateRegion.Top = 0
-		upd.UpdateRegion.Left = 0
-		upd.UpdateRegion.Width = uint32(d.Width)
-		upd.UpdateRegion.Height = uint32(d.Height)
-		upd.WaveformMode = 2
-		upd.UpdateMode = 0
-		upd.Temp = 1
-		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, d.fd.Fd(), uintptr(mxcfbSendUpdate), uintptr(unsafe.Pointer(&upd)))
-	}
+	// sim mode: nothing to do
 }
 
-// Close unmaps and closes fb
-func (d *Display) Close() {
-	if d.mmaped && d.buf != nil {
-		_ = syscall.Munmap(d.buf)
-		d.buf = nil
-	}
-	if d.fd != nil {
-		_ = d.fd.Close()
-		d.fd = nil
-	}
-}
+// Close releases resources
+func (d *Display) Close() {}
 
 // DebugDump dumps sim buffer as ASCII
 func (d *Display) DebugDump() string {
-	if !d.simulate {
+	if !d.simulate || d.buf == nil {
 		return ""
 	}
 	var sb strings.Builder
@@ -536,7 +369,7 @@ func (d *Display) DebugDump() string {
 		for col := 0; col < d.Cols && col < 80; col++ {
 			px := col*CellSize + CellSize/2
 			py := row*CellSize + CellSize/2
-			off := py*d.Stride + px*4
+			off := py*d.Stride + px
 			var v uint8 = 0xFF
 			if off < len(d.buf) {
 				v = d.buf[off]
