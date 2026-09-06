@@ -365,46 +365,27 @@ func (s *LoginScreen95) build() {
 	}
 	d := s.App.Display
 	cols := d.Cols
-	rows := d.Rows
 	s.Components = nil
-	// Modern header (not Win95)
-	s.Components = append(s.Components, NewModernHeader("KindleCord  —  Setup", s.OnQuit))
-	// Centered card
-	cardPad := 2
-	cardX := cardPad
-	cardY := 3
-	cardW := d.Width - cardPad*2*cell
-	cardH := (rows-7)*cell - 8
-	s.Components = append(s.Components, &Card{ x: cardX, y: cardY, w: cardW, h: cardH, radius: 16 })
-	y := 5
-	s.Components = append(s.Components, NewLabel(4, y, "Welcome! Let's get you connected.", 0, W95Black, W95White))
-	y += 2
-	s.Components = append(s.Components, NewLabel(4, y, "1. Open this URL on your phone / PC:", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewTitleBar("KindleCord Setup", s.OnQuit))
+	y := 4
+	s.Components = append(s.Components, NewLabel(2, y, "Open on your phone:", 0, W95Black, W95White))
 	y += 2
 	url := s.URL
 	if url == "" {
 		url = "http://0.0.0.0:8080"
 	}
-	// URL box - centered, highlighted
-	boxY := y
-	boxH := 44
-	boxW := len(url)*12 + 32
-	if boxW > d.Width-96 {
-		boxW = d.Width - 96
+	cx_ := (cols - len(url)) / 2
+	if cx_ < 0 {
+		cx_ = 0
 	}
-	boxX := (d.Width - boxW) / 2
-	s.Components = append(s.Components, &Box{ x: boxX, y: boxY, w: boxW, h: boxH, radius: 10, bg: W95White, border: W95Blue })
-	s.Components = append(s.Components, NewLabel((cols-len(url))/2, y+1, url, cols-4, W95Blue, W95White))
+	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, W95Blue, W95White))
 	y += 3
-	s.Components = append(s.Components, NewLabel(4, y, "2. Paste your Discord token and tap Log in", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, W95Black, W95White))
 	y += 2
-	s.Components = append(s.Components, NewLabel(4, y, "3. Your servers will appear here.", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, W95Black, W95White))
 	y += 2
-	s.Components = append(s.Components, NewLabel(4, y, "Waiting for token ...", 0, W95Blue, W95White))
-	// small hint
-	y += 2
-	s.Components = append(s.Components, NewLabel(4, y, "Tip: Browser > DevTools > localStorage.getItem('token')", 0, W95Dark, W95White))
-	btnY := rows - 3
+	s.Components = append(s.Components, NewLabel(2, y, "Waiting for token...", 0, W95Black, W95White))
+	btnY := d.Rows - 3
 	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "Exit", s.OnQuit, 8))
 }
 func (s *LoginScreen95) Render(d *display.Display) { s.BaseScreen.Render(d) }
