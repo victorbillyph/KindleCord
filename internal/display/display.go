@@ -71,7 +71,6 @@ func getFbSizeIoctl() (w, h int, ok bool) {
 		return 0, 0, false
 	}
 	defer f.Close()
-	// fb_var_screeninfo: xres at 0, yres at 4 (u32)
 	const FBIOGET_VSCREENINFO = 0x4600
 	var info [160]byte
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), FBIOGET_VSCREENINFO, uintptr(unsafe.Pointer(&info[0])))
@@ -81,6 +80,11 @@ func getFbSizeIoctl() (w, h int, ok bool) {
 	w = int(info[0]) | int(info[1])<<8 | int(info[2])<<16 | int(info[3])<<24
 	h = int(info[4]) | int(info[5])<<8 | int(info[6])<<16 | int(info[7])<<24
 	if w > 0 && h > 0 && w < 5000 && h < 5000 {
+		// Kindle reports portrait 1072x1448 but fbink uses landscape 1448x1072
+		// Force landscape for consistency with old Python (60x44)
+		if w < h {
+			w, h = h, w
+		}
 		return w, h, true
 	}
 	return 0, 0, false
