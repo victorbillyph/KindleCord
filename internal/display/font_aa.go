@@ -68,10 +68,10 @@ func (d *Display) drawTextAABuf(cx, cy int, text string, fg, bg uint8, bold bool
 	// pixel position
 	px := cx * CellSize
 	py := cy * CellSize
-	// font size: 18px for normal, 20 for bold/title
-	fontSize := 18.0
+	// font size: 16px normal, 18 bold - smaller to fit safe area and less off-screen
+	fontSize := 16.0
 	if bold {
-		fontSize = 20.0
+		fontSize = 18.0
 	}
 	// Use freetype if available
 	if goFontRegular == nil {
@@ -85,18 +85,20 @@ func (d *Display) drawTextAABuf(cx, cy int, text string, fg, bg uint8, bold bool
 	if bold && goFontBold != nil {
 		f = goFontBold
 	}
-	// Create RGBA image for this text line (CellSize height, text width)
-	// Estimate width: 12px per char avg * len
-	estW := len(text)*12 + 8
+	estW := len(text)*10 + 8
 	estH := CellSize
 	if estW > d.Width-px {
 		estW = d.Width - px
+	}
+	// Ensure we don't exceed cols width in pixels
+	maxPxW := (d.Cols - cx) * CellSize
+	if estW > maxPxW {
+		estW = maxPxW
 	}
 	if estW <= 0 || estH <= 0 {
 		return
 	}
 	img := image.NewRGBA(image.Rect(0, 0, estW, estH))
-	// Fill bg
 	bgCol := color.RGBA{bg, bg, bg, 255}
 	for y := 0; y < estH; y++ {
 		for x := 0; x < estW; x++ {
@@ -116,7 +118,7 @@ func (d *Display) drawTextAABuf(cx, cy int, text string, fg, bg uint8, bold bool
 	}
 	c.SetSrc(image.NewUniform(fgCol))
 	c.SetHinting(font.HintingFull)
-	pt := freetype.Pt(2, 16)
+	pt := freetype.Pt(2, 14)
 	_, err := c.DrawString(text, pt)
 	if err != nil {
 		log.Printf("[FONT] draw fail: %v", err)

@@ -65,20 +65,33 @@ func grayName(gray uint8) string {
 	return "WHITE"
 }
 
+func getFbSizeIoctl() (w, h int, ok bool) {
+	f, err := os.OpenFile("/dev/fb0", os.O_RDONLY, 0)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer f.Close()
+	// fb_var_screeninfo: xres at 0, yres at 4 (u32)
+	const FBIOGET_VSCREENINFO = 0x4600
+	var info [160]byte
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), FBIOGET_VSCREENINFO, uintptr(unsafe.Pointer(&info[0])))
+	if errno != 0 {
+		return 0, 0, false
+	}
+	w = int(info[0]) | int(info[1])<<8 | int(info[2])<<16 | int(info[3])<<24
+	h = int(info[4]) | int(info[5])<<8 | int(info[6])<<16 | int(info[7])<<24
+	if w > 0 && h > 0 && w < 5000 && h < 5000 {
+		return w, h, true
+	}
+	return 0, 0, false
+}
+
 func detectFBParams() (w, h, stride, bpp int) {
 	w, h, stride, bpp = 1448, 1072, 1448, 8
-	if data, err := os.ReadFile("/sys/class/graphics/fb0/virtual_size"); err == nil {
-		parts := strings.Split(strings.TrimSpace(string(data)), ",")
-		if len(parts) == 2 {
-			if ww, err := strconv.Atoi(strings.TrimSpace(parts[0])); err == nil && ww > 0 {
-				w = ww
-			}
-			if hh, err := strconv.Atoi(strings.TrimSpace(parts[1])); err == nil && hh > 0 {
-				h = hh
-			}
-		}
-	}
-	if data, err := os.ReadFile("/sys/class/graphics/fb0/mode"); err == nil {
+	// Try ioctl first (most reliable on Kindle)
+	if ww, hh, ok := getFbSizeIoctl(); ok {
+		w, h = ww, hh
+	} else if data, err := os.ReadFile("/sys/class/graphics/fb0/mode"); err == nil {
 		m := strings.TrimSpace(string(data))
 		if strings.Contains(m, "x") {
 			s := m
@@ -123,13 +136,20 @@ func detectFBParams() (w, h, stride, bpp int) {
 // New creates a Display. Uses fbink on Kindle, mmap/sim on PC.
 func New() *Display {
 	w, h, stride, bpp := detectFBParams()
+	// Keep 2-cell margin (48px) for safe area to avoid off-screen clipping
+	safeW := w - 16
+	safeH := h - 16
+	if safeW < w/2 {
+		safeW = w
+		safeH = h
+	}
 	d := &Display{
 		Width:  w,
 		Height: h,
 		Stride: stride,
 		BPP:    bpp,
-		Cols:   w / CellSize,
-		Rows:   h / CellSize,
+		Cols:   safeW / CellSize,
+		Rows:   safeH / CellSize,
 		fbink:  findFbink(),
 	}
 	if d.fbink != "" {

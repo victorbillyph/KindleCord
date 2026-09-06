@@ -152,57 +152,79 @@ func (r *Reader) Close() {
 	}
 }
 
-// PowerWatcher watches power button double-press, sharing logic without stealing touch fd
+// PowerWatcher watches power button double-press on all event devices
 type PowerWatcher struct {
-	file       *os.File
-	eventSize  int
-	buf        []byte
-	last       time.Time
-	double     bool
-	simulate   bool
+	files     []*os.File
+	eventSize int
+	bufs      [][]byte
+	last      time.Time
+	double    bool
+	simulate  bool
 }
 
 func NewPowerWatcher(path string) *PowerWatcher {
-	if path == "" {
-		path = "/dev/input/event0"
+	// Try all likely power devices: event0, event1, event2
+	candidates := []string{"/dev/input/event0", "/dev/input/event1", "/dev/input/event2"}
+	if path != "" && path != "/dev/input/event0" {
+		candidates = append([]string{path}, candidates...)
 	}
-	f, err := os.OpenFile(path, os.O_RDONLY, 0)
-	if err != nil {
+	var files []*os.File
+	var bufs [][]byte
+	sz := 16
+	for _, p := range candidates {
+		f, err := os.OpenFile(p, os.O_RDONLY, 0)
+		if err != nil {
+			continue
+		}
+		sz = detectEventSize(f)
+		_ = syscall.SetNonblock(int(f.Fd()), true)
+		log.Printf("[POWER] watching %s size=%d", p, sz)
+		files = append(files, f)
+		bufs = append(bufs, make([]byte, sz))
+	}
+	if len(files) == 0 {
 		return &PowerWatcher{simulate: true, eventSize: 16}
 	}
-	sz := detectEventSize(f)
-	// make non-blocking
-	_ = syscall.SetNonblock(int(f.Fd()), true)
-	log.Printf("[POWER] watching %s size=%d", path, sz)
-	return &PowerWatcher{file: f, eventSize: sz, buf: make([]byte, sz)}
+	return &PowerWatcher{files: files, eventSize: sz, bufs: bufs}
 }
 
 func (p *PowerWatcher) Poll() {
-	if p.simulate || p.file == nil {
+	if p.simulate || len(p.files) == 0 {
 		return
 	}
-	fd := int(p.file.Fd())
-	for {
-		n, err := syscall.Read(fd, p.buf)
-		if err != nil {
-			if err == syscall.EAGAIN {
-				return
+	for idx, f := range p.files {
+		fd := int(f.Fd())
+		buf := p.bufs[idx]
+		for {
+			n, err := syscall.Read(fd, buf)
+			if err != nil {
+				if err == syscall.EAGAIN {
+					break
+				}
+				break
 			}
-			return
-		}
-		if n < p.eventSize {
-			return
-		}
-		ev := parseEvent(p.buf, p.eventSize)
-		if ev == nil {
-			continue
-		}
-		if ev.Type == EV_KEY && ev.Value == 1 && (ev.Code == KEY_POWER || ev.Code == KEY_SLEEP) {
-			now := time.Now()
-			if now.Sub(p.last) < 500*time.Millisecond {
-				p.double = true
+			if n < p.eventSize {
+				break
 			}
-			p.last = now
+			ev := parseEvent(buf, p.eventSize)
+			if ev == nil {
+				continue
+			}
+			// Log all KEY events for debug
+			if ev.Type == EV_KEY {
+				log.Printf("[POWER] KEY code=%d value=%d", ev.Code, ev.Value)
+			}
+			if ev.Type == EV_KEY && ev.Value == 1 && (ev.Code == KEY_POWER || ev.Code == KEY_SLEEP || ev.Code == 116 || ev.Code == 142) {
+				now := time.Now()
+				elapsed := now.Sub(p.last)
+				log.Printf("[POWER] power press elapsed=%v", elapsed)
+				if elapsed < 800*time.Millisecond {
+					p.double = true
+					log.Printf("[POWER] DOUBLE detected!")
+				}
+				p.last = now
+			}
+			// Also treat long hold (2s) as exit via IsDouble check? handled via timeout in main
 		}
 	}
 }
@@ -216,8 +238,10 @@ func (p *PowerWatcher) IsDouble() bool {
 }
 
 func (p *PowerWatcher) Close() {
-	if p.file != nil {
-		_ = p.file.Close()
+	for _, f := range p.files {
+		if f != nil {
+			_ = f.Close()
+		}
 	}
 }
 
@@ -228,13 +252,7 @@ type CombinedReader struct {
 }
 
 func NewCombined() (*Reader, *PowerWatcher) {
-	// If event0 is power and event1 is touch, keep separate but set power non-blocking so it doesn't steal
 	r := NewReader(nil)
 	p := NewPowerWatcher("/dev/input/event0")
-	// If touch used event0, disable separate power watcher to avoid double open
-	if r.file != nil && p.file != nil {
-		// check if same path (both opened event0)
-		// we can't easily detect, but log
-	}
 	return r, p
 }
