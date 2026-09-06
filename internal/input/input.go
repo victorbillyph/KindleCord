@@ -10,10 +10,14 @@ import (
 )
 
 const (
-	EV_ABS = 3
+	EV_SYN = 0
 	EV_KEY = 1
+	EV_ABS = 3
+	ABS_X               = 0
+	ABS_Y               = 1
 	ABS_MT_POSITION_X = 53
 	ABS_MT_POSITION_Y = 54
+	ABS_MT_SLOT       = 47
 	BTN_TOUCH         = 330
 	KEY_POWER         = 116
 	KEY_SLEEP         = 142
@@ -77,15 +81,12 @@ func (r *Reader) Poll(timeout time.Duration) *TouchEvent {
 		t := syscall.NsecToTimeval(timeout.Nanoseconds())
 		tv = &t
 	}
-	// select with timeout
 	fds := syscall.FdSet{}
-	// FD_SET
 	fdSet(&fds, fd)
 	n, err := syscall.Select(fd+1, &fds, nil, nil, tv)
 	if err != nil || n == 0 {
 		return nil
 	}
-	// read multiple events available
 	for {
 		nr, err := syscall.Read(fd, r.buf)
 		if err != nil || nr < r.eventSize {
@@ -96,16 +97,23 @@ func (r *Reader) Poll(timeout time.Duration) *TouchEvent {
 			return nil
 		}
 		if ev.Type == EV_ABS {
-			if ev.Code == ABS_MT_POSITION_X {
+			switch ev.Code {
+			case ABS_X, ABS_MT_POSITION_X:
 				r.x = int(ev.Value)
-			} else if ev.Code == ABS_MT_POSITION_Y {
+			case ABS_Y, ABS_MT_POSITION_Y:
 				r.y = int(ev.Value)
 			}
 		} else if ev.Type == EV_KEY && ev.Code == BTN_TOUCH {
-			return &TouchEvent{X: r.x, Y: r.y, Press: ev.Value != 0}
+			press := ev.Value != 0
+			log.Printf("[INPUT] touch x=%d y=%d press=%v", r.x, r.y, press)
+			if press {
+				return &TouchEvent{X: r.x, Y: r.y, Press: true}
+			}
+			return &TouchEvent{X: r.x, Y: r.y, Press: false}
+		} else if ev.Type == EV_SYN {
+			// SYN event may indicate end of MT frame, but we handle via BTN_TOUCH
 		}
-		// check if more data pending without blocking
-		// peek with select 0
+		// check if more data pending
 		fds2 := syscall.FdSet{}
 		fdSet(&fds2, fd)
 		tv0 := syscall.Timeval{}

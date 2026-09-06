@@ -180,9 +180,75 @@ func (t *TitleBar95) Tap(px, py int) bool {
 	return false
 }
 
+// ModernHeader - cleaner, rounded
+type ModernHeader struct {
+	Title   string
+	OnClose func()
+	rect    [4]int
+	BarH    int
+}
+
+func NewModernHeader(title string, onClose func()) *ModernHeader {
+	return &ModernHeader{Title: title, OnClose: onClose, BarH: 48}
+}
+func (m *ModernHeader) Render(d *display.Display) {
+	w := d.Width
+	// soft header with rounded bottom
+	d.FillRect(0, 0, w, m.BarH, W95Blue)
+	d.FillRoundRect(0, m.BarH-8, w, 16, 8, W95Blue)
+	d.DrawText(1, 0, trunc(m.Title, d.Cols-4), W95White, W95Blue)
+	closeX := d.Cols - 4
+	m.rect = [4]int{cx(closeX), 4, 3 * cell, m.BarH - 10}
+	d.FillRoundRect(m.rect[0], m.rect[1], m.rect[2], m.rect[3], 8, W95Gray)
+	bevelUp(d, m.rect[0], m.rect[1], m.rect[2], m.rect[3])
+	d.DrawText(closeX+1, 0, "X", W95Black, W95Gray)
+}
+func (m *ModernHeader) Contains(px, py int) bool {
+	x, y, w, h := m.rect[0], m.rect[1], m.rect[2], m.rect[3]
+	return px >= x && px < x+w && py >= y && py < y+h
+}
+func (m *ModernHeader) Tap(px, py int) bool {
+	if m.OnClose != nil && m.Contains(px, py) {
+		m.OnClose()
+		return true
+	}
+	return false
+}
+
+// Card - white rounded container with soft shadow
+type Card struct {
+	x, y, w, h, radius int
+}
+
+func (c *Card) Render(d *display.Display) {
+	// shadow
+	d.FillRoundRect(c.x+2, c.y+2, c.w, c.h, c.radius, W95Dark)
+	d.FillRoundRect(c.x, c.y, c.w, c.h, c.radius, W95White)
+	// inner border
+	d.FillRoundRect(c.x, c.y, c.w, c.h, c.radius, W95White)
+}
+func (c *Card) Contains(px, py int) bool { return false }
+func (c *Card) Tap(px, py int) bool      { return false }
+
+// Box - rounded bordered box for URL/highlight
+type Box struct {
+	x, y, w, h, radius int
+	bg, border         uint8
+}
+
+func (b *Box) Render(d *display.Display) {
+	d.FillRoundRect(b.x, b.y, b.w, b.h, b.radius, b.border)
+	d.FillRoundRect(b.x+2, b.y+2, b.w-4, b.h-4, b.radius-2, b.bg)
+}
+func (b *Box) Contains(px, py int) bool { return false }
+func (b *Box) Tap(px, py int) bool      { return false }
+
 // Internal helpers
 type rowBg struct{ cy, cols int }
-func (r *rowBg) Render(d *display.Display) { d.FillRect(cell, cy(r.cy), d.Width-cell*2, cell, 0xF0) }
+func (r *rowBg) Render(d *display.Display) {
+	// subtle rounded row
+	d.FillRoundRect(cell+2, cy(r.cy)+1, d.Width-cell*2-4, cell-2, 6, 0xF2)
+}
 func (r *rowBg) Contains(px, py int) bool { return false }
 func (r *rowBg) Tap(px, py int) bool      { return false }
 
@@ -195,13 +261,13 @@ type scrollArrow struct{ cy, cols int; up bool }
 func (s *scrollArrow) Render(d *display.Display) {
 	y := cy(s.cy)
 	w := d.Width
-	d.FillRect(cell, y, w-cell*2, cell, W95Gray)
-	bevelDown(d, cell, y, w-cell*2, cell)
-	label := "\\/"
+	d.FillRoundRect(cell+4, y+2, w-cell*2-8, cell-4, 8, W95Gray)
+	bevelUp(d, cell+4, y+2, w-cell*2-8, cell-4)
+	label := "  \\/  "
 	if s.up {
-		label = "/\\"
+		label = "  /\\  "
 	}
-	cx_ := (s.cols - 2) / 2
+	cx_ := (s.cols - len(label)/2) / 2
 	d.DrawText(cx_, s.cy, label, W95Black, W95Gray)
 }
 func (s *scrollArrow) Contains(px, py int) bool { return false }
@@ -302,27 +368,46 @@ func (s *LoginScreen95) build() {
 	}
 	d := s.App.Display
 	cols := d.Cols
+	rows := d.Rows
 	s.Components = nil
-	s.Components = append(s.Components, NewTitleBar("KindleCord Login", s.OnQuit))
-	y := 4
-	s.Components = append(s.Components, NewLabel(2, y, "Open on your phone:", 0, W95Black, W95White))
+	// Modern header (not Win95)
+	s.Components = append(s.Components, NewModernHeader("KindleCord  —  Setup", s.OnQuit))
+	// Centered card
+	cardPad := 2
+	cardX := cardPad
+	cardY := 3
+	cardW := d.Width - cardPad*2*cell
+	cardH := (rows-7)*cell - 8
+	s.Components = append(s.Components, &Card{ x: cardX, y: cardY, w: cardW, h: cardH, radius: 16 })
+	y := 5
+	s.Components = append(s.Components, NewLabel(4, y, "Welcome! Let's get you connected.", 0, W95Black, W95White))
+	y += 2
+	s.Components = append(s.Components, NewLabel(4, y, "1. Open this URL on your phone / PC:", 0, W95Black, W95White))
 	y += 2
 	url := s.URL
 	if url == "" {
 		url = "http://0.0.0.0:8080"
 	}
-	cx_ := (cols - len(url)) / 2
-	if cx_ < 0 {
-		cx_ = 0
+	// URL box - centered, highlighted
+	boxY := y
+	boxH := 44
+	boxW := len(url)*12 + 32
+	if boxW > d.Width-96 {
+		boxW = d.Width - 96
 	}
-	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, W95Blue, W95White))
+	boxX := (d.Width - boxW) / 2
+	s.Components = append(s.Components, &Box{ x: boxX, y: boxY, w: boxW, h: boxH, radius: 10, bg: W95White, border: W95Blue })
+	s.Components = append(s.Components, NewLabel((cols-len(url))/2, y+1, url, cols-4, W95Blue, W95White))
 	y += 3
-	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(4, y, "2. Paste your Discord token and tap Log in", 0, W95Black, W95White))
 	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(4, y, "3. Your servers will appear here.", 0, W95Black, W95White))
 	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "Waiting for token...", 0, W95Black, W95White))
-	btnY := d.Rows - 4
+	s.Components = append(s.Components, NewLabel(4, y, "Waiting for token ...", 0, W95Blue, W95White))
+	// small hint
+	y += 2
+	s.Components = append(s.Components, NewLabel(4, y, "Tip: Browser > DevTools > localStorage.getItem('token')", 0, W95Dark, W95White))
+	btnY := rows - 3
 	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "Exit", s.OnQuit, 8))
 }
 func (s *LoginScreen95) Render(d *display.Display) { s.BaseScreen.Render(d) }
@@ -388,8 +473,10 @@ func (s *ListScreen95) build() {
 	s.Components = nil
 	row := 0
 	if s.ShowTitle {
-		s.Components = append(s.Components, NewTitleBar(s.Title, s.OnBack))
+		s.Components = append(s.Components, NewModernHeader(s.Title, s.OnBack))
 		row = 2
+		// subtle card behind list
+		s.Components = append(s.Components, &Card{ x: cell, y: cy(row)-4, w: d.Width-cell*2, h: (d.Rows-row-3)*cell, radius: 12 })
 	}
 	total := len(s.Items)
 	visibleRows := d.Rows - row - 4
