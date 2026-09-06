@@ -30,12 +30,12 @@ const (
 )
 
 const (
-	FT_ICON  = 30
-	FT_TITLE = 26
-	FT_BTN   = 22
-	FT_LABEL = 20
-	FT_MSG   = 20
-	FT_SMALL = 16
+	FT_ICON  = 32
+	FT_TITLE = 28
+	FT_BTN   = 24
+	FT_LABEL = 22
+	FT_MSG   = 22
+	FT_SMALL = 18
 )
 
 func trunc(s string, max int) string {
@@ -225,13 +225,13 @@ type Button struct {
 }
 
 func NewButton(x, y int, text string, cb func()) *Button {
-	w := len(text)*9 + 24
+	w := len(text)*10 + 24
 	return &Button{X: x, Y: y, W: w, H: 36, Text: text, Callback: cb}
 }
 
 func (b *Button) Render(d *display.Display) {
 	d.FillRoundRect(b.X, b.Y, b.W, b.H, 8, BG_BTN)
-	tx := b.X + (b.W-len(b.Text)*9)/2
+	tx := b.X + (b.W-len(b.Text)*10)/2
 	ty := b.Y + (b.H-FT_BTN)/2
 	d.DrawTextPixel(tx, ty, FT_BTN, b.Text, FG_WHITE, BG_BTN)
 }
@@ -560,7 +560,7 @@ func (s *HomeScreen) Render(d *display.Display) {
 
 	contentW := d.Width - CONTENT_X - 6
 	startY := HEADER_H + 8
-	itemH := 44
+	itemH := 48
 	itemGap := 4
 	visible := (d.Height - HEADER_H - 56) / (itemH + itemGap)
 	if visible < 1 {
@@ -627,7 +627,7 @@ func (s *HomeScreen) OnTouch(x, y int) bool {
 	}
 
 	d := s.App.Display
-	itemH := 44
+	itemH := 48
 	itemGap := 4
 	startY := HEADER_H + 8
 	visible := (d.Height - HEADER_H - 56) / (itemH + itemGap)
@@ -756,8 +756,8 @@ func (s *MessageScreen) Render(d *display.Display) {
 	contentX := CONTENT_X + 4
 	contentW := d.Width - contentX - 10
 	startY := HEADER_H + 10
-	msgH := 52
-	msgGap := 8
+	msgH := 60
+	msgGap := 10
 
 	type msgView struct {
 		author  string
@@ -770,6 +770,19 @@ func (s *MessageScreen) Render(d *display.Display) {
 			if u, ok := a["username"].(string); ok {
 				author = u
 			}
+			if author == "" {
+				if g, ok := a["global_name"].(string); ok {
+					author = g
+				}
+			}
+			if author == "" {
+				if g, ok := a["display_name"].(string); ok {
+					author = g
+				}
+			}
+		}
+		if author == "" {
+			author = "Unknown"
 		}
 		content, _ := msg["content"].(string)
 		content = strings.ReplaceAll(content, "\n", " ")
@@ -817,16 +830,17 @@ func (s *MessageScreen) Render(d *display.Display) {
 		}
 		d.FillRect(contentX, y, contentW, msgH, FG_BORDER)
 		d.FillRoundRect(contentX+1, y+1, contentW-2, msgH-2, 7, bg)
-		// author
-		d.DrawTextPixel(contentX+12, y+6, FT_LABEL, v.author, BG_DM, bg)
+		// author badge + name
+		d.FillRoundRect(contentX+12, y+8, 14, 14, 7, BG_DM)
+		d.DrawTextPixel(contentX+34, y+8, FT_LABEL, v.author, FG_BLACK, bg)
 		// content
 		if len(v.content) > 0 {
-			maxChars := contentW / 8
+			maxChars := contentW / 9
 			txt := v.content
 			if len(txt) > maxChars {
 				txt = txt[:maxChars-1] + "~"
 			}
-			d.DrawTextPixel(contentX+12, y+28, FT_SMALL, txt, FG_BLACK, bg)
+			d.DrawTextPixel(contentX+12, y+36, FT_SMALL, txt, FG_BLACK, bg)
 		}
 		y += msgH + msgGap
 	}
@@ -854,8 +868,8 @@ func (s *MessageScreen) OnTouch(x, y int) bool {
 	}
 
 	d := s.App.Display
-	msgH := 52
-	msgGap := 8
+	msgH := 60
+	msgGap := 10
 	startY := HEADER_H + 10
 	totalLines := len(s.Messages)
 	visible := (d.Height - HEADER_H - 80) / (msgH + msgGap)
