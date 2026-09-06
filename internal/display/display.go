@@ -82,8 +82,12 @@ func getFbSizeIoctl() (w, h, stride, rotate int, ok bool) {
 	h = le(info[4:8])
 	// xres_virtual == line_length in bytes for 8bpp (equals row stride)
 	stride = le(info[8:12])
-	// rotate field (struct fb_var_screeninfo offset 152)
-	rotate = int(info[152]) | int(info[153])<<8 | int(info[154])<<16 | int(info[155])<<24
+	// rotate field (struct fb_var_screeninfo offset 136 on 32-bit ARM)
+	// xres(0) yres(4) xres_virt(8) yres_virt(12) xoff(16) yoff(20) bpp(24) grayscale(28)
+	// red(32) green(44) blue(56) transp(68) nonstd(80) activate(84) height(88) width(92)
+	// accel(96) pixclock(100) lm(104) rm(108) um(112) lom(116) hsync(120) vsync(124)
+	// sync(128) vmode(132) rotate(136) colorspace(140) reserved(144)
+	rotate = le(info[136:140])
 	if w > 0 && h > 0 && w < 5000 && h < 5000 {
 		return w, h, stride, rotate, true
 	}
