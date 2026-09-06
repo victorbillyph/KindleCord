@@ -50,7 +50,7 @@ fi
 
 if [ -f "$EXT_DIR/kindlecord-arm" ]; then
     echo "Using: $EXT_DIR/kindlecord-arm (Go ARM)" >> "$LOG"
-    "$EXT_DIR/kindlecord-arm" >> "$LOG" 2>> "$LOG" 2>&1
+    "$EXT_DIR/kindlecord-arm" >> "$LOG" 2>&1
     EXIT=$?
     echo "Exit code: $EXIT" >> "$LOG"
     exit $EXIT
