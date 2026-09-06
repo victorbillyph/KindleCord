@@ -289,6 +289,9 @@ func main() {
 	msgScreen := ui.NewMessageScreen()
 	app.Add("messages", msgScreen)
 
+	loadingScreen := ui.NewLoadingScreen()
+	app.Add("loading", loadingScreen)
+
 	statusDialog := ui.NewDialog("Status", "", nil)
 	app.Add("status", statusDialog)
 
@@ -306,6 +309,10 @@ func main() {
 			"message": message,
 			"on_ok":   statusDialog.OnOK,
 		})
+	}
+
+	showLoading := func(msg string) {
+		app.Show("loading", map[string]interface{}{"message": msg})
 	}
 
 	checkForUpdates := func() {
@@ -358,7 +365,7 @@ func main() {
 			serverNames[i] = serverName(g)
 		}
 		return map[string]interface{}{
-			"servers":    serverNames,
+			"servers":     serverNames,
 			"selected_dm": st.selDM,
 			"server_idx":  st.selServer,
 			"on_dm_click": func() {
@@ -377,43 +384,50 @@ func main() {
 	}
 
 	showDMs = func() {
-		dms, err := client.GetDMs()
-		if err != nil {
-			log.Printf("[MAIN] get DMs fail: %v", err)
-			dms = nil
-		}
-		st.dms = dms
-		items := make([]string, len(dms))
-		for i, ch := range dms {
-			items[i] = dmDisplayName(ch)
-		}
-		if len(items) == 0 {
-			items = []string{"(no conversations)"}
-		}
-		args := sidebarArgs()
-		args["title"] = "Direct Messages"
-		args["items"] = items
-		args["on_select"] = func(idx int) {
-			if idx >= len(st.dms) {
-				return
-			}
-			dmID, _ := st.dms[idx]["id"].(string)
-			dmName := dmDisplayName(st.dms[idx])
-			msgs, err := client.GetMessages(dmID, 50, "")
+		showLoading("Loading DMs...")
+		go func() {
+			dms, err := client.GetDMs()
 			if err != nil {
-				log.Printf("[MAIN] get DM messages fail: %v", err)
-				return
+				log.Printf("[MAIN] get DMs fail: %v", err)
+				dms = nil
 			}
-			for l, r := 0, len(msgs)-1; l < r; l, r = l+1, r-1 {
-				msgs[l], msgs[r] = msgs[r], msgs[l]
+			st.dms = dms
+			items := make([]string, len(dms))
+			for i, ch := range dms {
+				items[i] = dmDisplayName(ch)
 			}
-			msgArgs := sidebarArgs()
-			msgArgs["title"] = dmName
-			msgArgs["messages"] = msgs
-			msgArgs["on_back"] = func() { showDMs() }
-			app.Show("messages", msgArgs)
-		}
-		app.Show("home", args)
+			if len(items) == 0 {
+				items = []string{"(no conversations)"}
+			}
+			args := sidebarArgs()
+			args["title"] = "Direct Messages"
+			args["items"] = items
+			args["on_select"] = func(idx int) {
+				if idx >= len(st.dms) {
+					return
+				}
+				dmID, _ := st.dms[idx]["id"].(string)
+				dmName := dmDisplayName(st.dms[idx])
+				showLoading("Loading messages...")
+				go func() {
+					msgs, err := client.GetMessages(dmID, 50, "")
+					if err != nil {
+						log.Printf("[MAIN] get DM messages fail: %v", err)
+						showStatus("Load Error", err.Error())
+						return
+					}
+					for l, r := 0, len(msgs)-1; l < r; l, r = l+1, r-1 {
+						msgs[l], msgs[r] = msgs[r], msgs[l]
+					}
+					msgArgs := sidebarArgs()
+					msgArgs["title"] = dmName
+					msgArgs["messages"] = msgs
+					msgArgs["on_back"] = func() { showDMs() }
+					app.Show("messages", msgArgs)
+				}()
+			}
+			app.Show("home", args)
+		}()
 	}
 
 	showChannels = func(guildIdx int) {
@@ -422,56 +436,63 @@ func main() {
 		}
 		gid, _ := st.guilds[guildIdx]["id"].(string)
 		gname := serverName(st.guilds[guildIdx])
-		channels, err := client.GetChannels(gid)
-		if err != nil {
-			log.Printf("[MAIN] get channels fail: %v", err)
-			channels = nil
-		}
-		st.channels[gid] = channels
-
-		var textChannels []map[string]interface{}
-		for _, c := range channels {
-			if t, ok := c["type"].(float64); ok && t == 0 {
-				textChannels = append(textChannels, c)
-			} else if t, ok := c["type"].(int); ok && t == 0 {
-				textChannels = append(textChannels, c)
-			}
-		}
-
-		items := make([]string, len(textChannels))
-		chIDs := make([]string, len(textChannels))
-		for i, c := range textChannels {
-			items[i] = channelName(c)
-			chIDs[i], _ = c["id"].(string)
-		}
-		if len(items) == 0 {
-			items = []string{"(no text channels)"}
-		}
-
-		args := sidebarArgs()
-		args["title"] = gname
-		args["items"] = items
-		args["on_select"] = func(idx int) {
-			if idx >= len(chIDs) {
-				return
-			}
-			cid := chIDs[idx]
-			cname := items[idx]
-			msgs, err := client.GetMessages(cid, 50, "")
+		showLoading("Loading channels...")
+		go func() {
+			channels, err := client.GetChannels(gid)
 			if err != nil {
-				log.Printf("[MAIN] get messages fail: %v", err)
-				return
+				log.Printf("[MAIN] get channels fail: %v", err)
+				channels = nil
 			}
-			for l, r := 0, len(msgs)-1; l < r; l, r = l+1, r-1 {
-				msgs[l], msgs[r] = msgs[r], msgs[l]
+			st.channels[gid] = channels
+
+			var textChannels []map[string]interface{}
+			for _, c := range channels {
+				if t, ok := c["type"].(float64); ok && t == 0 {
+					textChannels = append(textChannels, c)
+				} else if t, ok := c["type"].(int); ok && t == 0 {
+					textChannels = append(textChannels, c)
+				}
 			}
-			msgArgs := sidebarArgs()
-			msgArgs["title"] = cname
-			msgArgs["messages"] = msgs
-			msgArgs["on_back"] = func() { showChannels(guildIdx) }
-			app.Show("messages", msgArgs)
-		}
-		app.Show("home", args)
+
+			items := make([]string, len(textChannels))
+			chIDs := make([]string, len(textChannels))
+			for i, c := range textChannels {
+				items[i] = channelName(c)
+				chIDs[i], _ = c["id"].(string)
+			}
+			if len(items) == 0 {
+				items = []string{"(no text channels)"}
+			}
+
+			args := sidebarArgs()
+			args["title"] = gname
+			args["items"] = items
+			args["on_select"] = func(idx int) {
+				if idx >= len(chIDs) {
+					return
+				}
+				cid := chIDs[idx]
+				cname := items[idx]
+				showLoading("Loading messages...")
+				go func() {
+					msgs, err := client.GetMessages(cid, 50, "")
+					if err != nil {
+						log.Printf("[MAIN] get messages fail: %v", err)
+						showStatus("Load Error", err.Error())
+						return
+					}
+					for l, r := 0, len(msgs)-1; l < r; l, r = l+1, r-1 {
+						msgs[l], msgs[r] = msgs[r], msgs[l]
+					}
+					msgArgs := sidebarArgs()
+					msgArgs["title"] = cname
+					msgArgs["messages"] = msgs
+					msgArgs["on_back"] = func() { showChannels(guildIdx) }
+					app.Show("messages", msgArgs)
+				}()
+			}
+			app.Show("home", args)
+		}()
 	}
 
 	guilds, err := client.GetGuilds()

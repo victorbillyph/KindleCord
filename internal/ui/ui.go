@@ -30,12 +30,12 @@ const (
 )
 
 const (
-	FT_ICON  = 26
-	FT_TITLE = 22
-	FT_BTN   = 18
-	FT_LABEL = 16
-	FT_MSG   = 16
-	FT_SMALL = 13
+	FT_ICON  = 30
+	FT_TITLE = 26
+	FT_BTN   = 22
+	FT_LABEL = 20
+	FT_MSG   = 20
+	FT_SMALL = 16
 )
 
 func trunc(s string, max int) string {
@@ -66,8 +66,8 @@ type Sidebar struct {
 	contentH      int
 	scroll        int
 
-	iconSize int
-	iconGap  int
+	iconSize  int
+	iconGap   int
 	iconStart int
 }
 
@@ -287,13 +287,13 @@ func NewListItem(x, y, w, h int, text string, fg, bg uint8, cb func()) *ListItem
 }
 
 func (li *ListItem) Render(d *display.Display) {
-	// card with border
+	// card with 1px border (built from 2 fills instead of a ring + text)
 	bg := li.BG
 	if bg == BG_CONTENT {
 		bg = BG_CARD
 	}
-	d.FillRoundRect(li.X, li.Y, li.W, li.H, 6, bg)
-	d.DrawRoundRectBorder(li.X, li.Y, li.W, li.H, 6, FG_BORDER)
+	d.FillRect(li.X, li.Y, li.W, li.H, FG_BORDER)
+	d.FillRoundRect(li.X+1, li.Y+1, li.W-2, li.H-2, 5, bg)
 	d.DrawTextPixel(li.X+14, li.Y+(li.H-li.Size)/2, li.Size, li.Text, li.FG, bg)
 }
 
@@ -367,15 +367,17 @@ func (a *App) Show(name string, args map[string]interface{}) {
 
 func (a *App) Touch(x, y int) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.Current == "" {
+		a.mu.Unlock()
 		return
 	}
 	scr := a.Screens[a.Current]
-	if scr != nil {
-		if scr.OnTouch(x, y) {
-			scr.Render(a.Display)
-		}
+	a.mu.Unlock()
+
+	if scr != nil && scr.OnTouch(x, y) {
+		a.mu.Lock()
+		scr.Render(a.Display)
+		a.mu.Unlock()
 	}
 }
 
@@ -384,11 +386,11 @@ func (a *App) Stop() { a.Running = false }
 // ── LoginScreen ──────────────────────────────────────────────────────
 
 type LoginScreen struct {
-	App    *App
-	URL    string
+	App     *App
+	URL     string
 	SSHInfo string
-	OnQuit func()
-items  []Component
+	OnQuit  func()
+	items   []Component
 }
 
 func NewLoginScreen(url string, onQuit func()) *LoginScreen {
@@ -808,23 +810,23 @@ func (s *MessageScreen) Render(d *display.Display) {
 	y := startY
 	for i := s.scroll; i < endIdx; i++ {
 		v := views[i]
-		// message card
+		// message card (1px border via 2 fills)
 		var bg uint8 = BG_CARD
 		if i%2 == 1 {
 			bg = GCARD_ALT
 		}
-		d.FillRoundRect(contentX, y, contentW, msgH, 8, bg)
-		d.DrawRoundRectBorder(contentX, y, contentW, msgH, 8, FG_BORDER)
+		d.FillRect(contentX, y, contentW, msgH, FG_BORDER)
+		d.FillRoundRect(contentX+1, y+1, contentW-2, msgH-2, 7, bg)
 		// author
 		d.DrawTextPixel(contentX+12, y+6, FT_LABEL, v.author, BG_DM, bg)
-		// timestamp separator + content
+		// content
 		if len(v.content) > 0 {
-			maxChars := contentW / 7
+			maxChars := contentW / 8
 			txt := v.content
 			if len(txt) > maxChars {
 				txt = txt[:maxChars-1] + "~"
 			}
-			d.DrawTextPixel(contentX+12, y+26, FT_SMALL, txt, FG_BLACK, bg)
+			d.DrawTextPixel(contentX+12, y+28, FT_SMALL, txt, FG_BLACK, bg)
 		}
 		y += msgH + msgGap
 	}
@@ -884,6 +886,39 @@ func (s *MessageScreen) OnTouch(x, y int) bool {
 	return false
 }
 
+// ── LoadingScreen ─────────────────────────────────────────────────────
+
+type LoadingScreen struct {
+	App *App
+	Msg string
+}
+
+func NewLoadingScreen() *LoadingScreen { return &LoadingScreen{} }
+
+func (s *LoadingScreen) SetApp(a *App) { s.App = a }
+
+func (s *LoadingScreen) OnShow(args map[string]interface{}) {
+	s.Msg = "Loading..."
+	if v, ok := args["message"].(string); ok && v != "" {
+		s.Msg = v
+	}
+}
+
+func (s *LoadingScreen) Render(d *display.Display) {
+	d.Clear(BG_CONTENT)
+	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
+	d.DrawTextPixel(12, 12, FT_TITLE, "KindleCord", FG_WHITE, BG_HEADER)
+
+	d.FillRoundRect(CONTENT_X+40, d.Height/2-24, d.Width-CONTENT_X-80, 48, 10, BG_CARD)
+	d.FillRect(CONTENT_X+40, d.Height/2-24, d.Width-CONTENT_X-80, 48, FG_BORDER)
+	txt := s.Msg
+	tx := CONTENT_X + 40 + (d.Width-CONTENT_X-80-len(txt)*10)/2
+	d.DrawTextPixel(tx, d.Height/2-14, FT_LABEL, txt, FG_BLACK, BG_CARD)
+	d.Refresh()
+}
+
+func (s *LoadingScreen) OnTouch(x, y int) bool { return false }
+
 // ── Dialog ───────────────────────────────────────────────────────────
 
 type Dialog struct {
@@ -926,7 +961,7 @@ func (d2 *Dialog) build() {
 	y := 64
 	for _, line := range strings.Split(d2.Message, "\n") {
 		d2.items = append(d2.items, NewLabel(CONTENT_X+12, y, line, FT_LABEL, FG_BLACK))
-		y += 22
+		y += 26
 	}
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
@@ -998,11 +1033,11 @@ func (s *ErrorScreen) build() {
 	y := 64
 	for _, line := range s.Lines {
 		if line == "" {
-			y += 16
+			y += 18
 			continue
 		}
 		s.items = append(s.items, NewLabel(CONTENT_X+12, y, line, FT_SMALL, FG_BLACK))
-		y += 22
+		y += 26
 	}
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2

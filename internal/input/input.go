@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	EV_SYN = 0
-	EV_KEY = 1
-	EV_ABS = 3
-	ABS_X               = 0
-	ABS_Y               = 1
+	EV_SYN            = 0
+	EV_KEY            = 1
+	EV_ABS            = 3
+	ABS_X             = 0
+	ABS_Y             = 1
 	ABS_MT_POSITION_X = 53
 	ABS_MT_POSITION_Y = 54
 	ABS_MT_SLOT       = 47
@@ -25,8 +25,8 @@ const (
 
 // TouchEvent represents a touch press/release
 type TouchEvent struct {
-	X, Y   int
-	Press  bool // true=press, false=release
+	X, Y  int
+	Press bool // true=press, false=release
 }
 
 type inputEvent struct {
@@ -38,11 +38,12 @@ type inputEvent struct {
 
 // Reader handles touch input with correct struct size handling
 type Reader struct {
-	file     *os.File
-	simulate bool
-	x, y     int
-	buf      []byte
-	eventSize int
+	file         *os.File
+	simulate     bool
+	x, y         int
+	buf          []byte
+	eventSize    int
+	pendingPress bool
 }
 
 func NewReader(paths []string) *Reader {
@@ -87,6 +88,10 @@ func (r *Reader) Poll(timeout time.Duration) *TouchEvent {
 	if err != nil || n == 0 {
 		return nil
 	}
+	// Read the events of the current frame. Press events are only emitted at
+	// the frame's SYN marker, once ABS coordinates are final (some drivers
+	// deliver the position events after the BTN_TOUCH key, and emitting early
+	// produced taps at x=0,y=0).
 	for {
 		nr, err := syscall.Read(fd, r.buf)
 		if err != nil || nr < r.eventSize {
@@ -104,14 +109,14 @@ func (r *Reader) Poll(timeout time.Duration) *TouchEvent {
 				r.y = int(ev.Value)
 			}
 		} else if ev.Type == EV_KEY && ev.Code == BTN_TOUCH {
-			press := ev.Value != 0
-			log.Printf("[INPUT] touch x=%d y=%d press=%v", r.x, r.y, press)
-			if press {
+			r.pendingPress = ev.Value != 0
+			log.Printf("[INPUT] touch x=%d y=%d press=%v", r.x, r.y, ev.Value != 0)
+		} else if ev.Type == EV_SYN {
+			if r.pendingPress {
+				r.pendingPress = false
 				return &TouchEvent{X: r.x, Y: r.y, Press: true}
 			}
-			return &TouchEvent{X: r.x, Y: r.y, Press: false}
-		} else if ev.Type == EV_SYN {
-			// SYN event may indicate end of MT frame, but we handle via BTN_TOUCH
+			// End of a no-press frame; keep looking.
 		}
 		// check if more data pending
 		fds2 := syscall.FdSet{}

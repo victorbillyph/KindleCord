@@ -369,10 +369,11 @@ func (d *Display) InvertRect(x, y, w, h int) {
 	}
 }
 
-// Refresh triggers e-ink update.
+// Refresh triggers e-ink update. Non-flashing GC16 for speed (no full-screen
+// flash, no blocking wait).
 func (d *Display) Refresh() {
 	if d.useFbink {
-		_ = d.runFB("-q", "-s", "-f", "-W", "GC16", "-w")
+		_ = d.runFB("-q", "-s", "-W", "GC16")
 		return
 	}
 	// sim mode: nothing to do
