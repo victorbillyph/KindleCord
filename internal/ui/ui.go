@@ -32,17 +32,44 @@ func trunc(s string, max int) string {
 }
 
 func bevelUp(d *display.Display, x, y, w, h int) {
-	d.HLine(x, y, w, W95White)
-	d.VLine(x, y, h, W95White)
-	d.HLine(x, y+h, w, W95Dark)
-	d.VLine(x+w, y, h, W95Dark)
+	// Rounded bevel for less pixelated look
+	if d.IsSimulate() || w < 40 {
+		// fallback to classic bevel on sim
+		d.HLine(x, y, w, W95White)
+		d.VLine(x, y, h, W95White)
+		d.HLine(x, y+h, w, W95Dark)
+		d.VLine(x+w, y, h, W95Dark)
+		return
+	}
+	// Rounded button: fill with rounded rect + soft shadow
+	r := 8
+	if h < 20 {
+		r = 4
+	}
+	d.FillRoundRect(x, y, w, h, r, W95Gray)
+	// highlight top edge
+	d.FillRect(x+r, y, w-r*2, 2, W95White)
+	d.FillRect(x, y+r, 2, h-r*2, W95White)
+	// shadow bottom
+	d.FillRect(x+r, y+h-2, w-r*2, 2, W95Dark)
+	d.FillRect(x+w-2, y+r, 2, h-r*2, W95Dark)
 }
 
 func bevelDown(d *display.Display, x, y, w, h int) {
-	d.HLine(x, y, w, W95Dark)
-	d.VLine(x, y, h, W95Dark)
-	d.HLine(x, y+h, w, W95White)
-	d.VLine(x+w, y, h, W95White)
+	if d.IsSimulate() || w < 40 {
+		d.HLine(x, y, w, W95Dark)
+		d.VLine(x, y, h, W95Dark)
+		d.HLine(x, y+h, w, W95White)
+		d.VLine(x+w, y, h, W95White)
+		return
+	}
+	r := 8
+	if h < 20 {
+		r = 4
+	}
+	d.FillRoundRect(x, y, w, h, r, W95Gray)
+	d.FillRect(x+r, y, w-r*2, 2, W95Dark)
+	d.FillRect(x, y+r, 2, h-r*2, W95Dark)
 }
 
 // Component interface

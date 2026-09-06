@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache: true
 
       - name: Vet
@@ -46,6 +46,7 @@ jobs:
           cp build/kindlecord-arm /tmp/staging/KindleCord/kindlecord
           cp -r bin config.xml menu.json README.md /tmp/staging/KindleCord/
           cp data/config.example.json /tmp/staging/KindleCord/data.example.json
+          cp bin/fbink /tmp/staging/KindleCord/bin/fbink 2>/dev/null || true
           (cd /tmp/staging && zip -r $GITHUB_WORKSPACE/build/KindleCord.zip KindleCord/)
           ls -lh build/
 

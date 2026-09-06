@@ -133,13 +133,37 @@ func New() *Display {
 		fbink:  findFbink(),
 	}
 	if d.fbink != "" {
-		// Kindle with fbink - use fbink subprocess (handles rotation, no mmap needed)
+		// Kindle with fbink - use offscreen buffer + fbink refresh (AA)
 		d.useFbink = true
-		// Still try to open fb0 for refresh ioctl fallback
+		// Try to open fb0 for direct write
 		if f, err := os.OpenFile("/dev/fb0", os.O_RDWR, 0); err == nil {
 			d.fd = f
+			// Try mmap for fast blit, fallback to write
+			size := w * h
+			if bpp == 8 {
+				size = stride * h
+				if size < w*h {
+					size = w * h
+				}
+			} else {
+				size = w * h * 4
+			}
+			if mmap, err := syscall.Mmap(int(f.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED); err == nil {
+				d.buf = mmap
+				d.mmaped = true
+				d.Stride = stride
+				if d.Stride < w {
+					d.Stride = w
+				}
+				log.Printf("[DISPLAY] fbink+AA mmap %s %dx%d stride=%d bpp=%d cols=%d rows=%d size=%d", d.fbink, w, h, stride, bpp, d.Cols, d.Rows, size)
+				return d
+			}
 		}
-		log.Printf("[DISPLAY] fbink mode %s %dx%d stride=%d bpp=%d cols=%d rows=%d", d.fbink, w, h, stride, bpp, d.Cols, d.Rows)
+		// Fallback: offscreen buffer in RAM, will write via fd on Refresh
+		d.buf = make([]byte, w*h)
+		d.Stride = w
+		d.BPP = 8
+		log.Printf("[DISPLAY] fbink+AA offscreen %s %dx%d cols=%d rows=%d", d.fbink, w, h, d.Cols, d.Rows)
 		return d
 	}
 
@@ -225,33 +249,35 @@ func (d *Display) setPixel(x, y int, color uint8) {
 
 // Clear fills entire screen
 func (d *Display) Clear(color uint8) {
+	// If we have a buffer (mmap or offscreen), write to it for AA
+	if d.buf != nil {
+		if d.BPP == 32 {
+			for i := 0; i < len(d.buf); i += 4 {
+				d.buf[i] = color
+				d.buf[i+1] = color
+				d.buf[i+2] = color
+				if i+3 < len(d.buf) {
+					d.buf[i+3] = 0xFF
+				}
+			}
+		} else if d.BPP == 8 {
+			for i := 0; i < len(d.buf) && i < d.Stride*d.Height; i++ {
+				d.buf[i] = color
+			}
+		} else {
+			for y := 0; y < d.Height; y++ {
+				for x := 0; x < d.Width; x++ {
+					d.setPixel(x, y, color)
+				}
+			}
+		}
+		return
+	}
 	if d.useFbink {
 		cname := grayName(color)
 		cmd := exec.Command(d.fbink, "-q", "-k", "-B", cname, "-b")
 		_ = cmd.Run()
 		return
-	}
-	if d.simulate && d.BPP == 32 {
-		for i := 0; i < len(d.buf); i += 4 {
-			d.buf[i] = color
-			d.buf[i+1] = color
-			d.buf[i+2] = color
-			if i+3 < len(d.buf) {
-				d.buf[i+3] = 0xFF
-			}
-		}
-		return
-	}
-	if d.BPP == 8 {
-		for i := 0; i < len(d.buf) && i < d.Stride*d.Height; i++ {
-			d.buf[i] = color
-		}
-	} else {
-		for y := 0; y < d.Height; y++ {
-			for x := 0; x < d.Width; x++ {
-				d.setPixel(x, y, color)
-			}
-		}
 	}
 }
 
@@ -260,28 +286,31 @@ func (d *Display) FillRect(x, y, w, h int, color uint8) {
 	if w <= 0 || h <= 0 {
 		return
 	}
+	if d.buf != nil {
+		if d.BPP == 8 {
+			for yy := y; yy < y+h; yy++ {
+				off := yy*d.Stride + x
+				for xx := 0; xx < w; xx++ {
+					if off+xx < len(d.buf) {
+						d.buf[off+xx] = color
+					}
+				}
+			}
+		} else {
+			for yy := y; yy < y+h; yy++ {
+				for xx := x; xx < x+w; xx++ {
+					d.setPixel(xx, yy, color)
+				}
+			}
+		}
+		return
+	}
 	if d.useFbink {
 		cname := grayName(color)
 		region := fmt.Sprintf("top=%d,left=%d,width=%d,height=%d", y, x, w, h)
 		cmd := exec.Command(d.fbink, "-q", "-k", region, "-B", cname, "-b")
 		_ = cmd.Run()
 		return
-	}
-	if d.BPP == 8 {
-		for yy := y; yy < y+h; yy++ {
-			off := yy*d.Stride + x
-			for xx := 0; xx < w; xx++ {
-				if off+xx < len(d.buf) {
-					d.buf[off+xx] = color
-				}
-			}
-		}
-	} else {
-		for yy := y; yy < y+h; yy++ {
-			for xx := x; xx < x+w; xx++ {
-				d.setPixel(xx, yy, color)
-			}
-		}
 	}
 }
 
@@ -311,7 +340,7 @@ func (d *Display) Pixel(x, y int, color uint8) {
 	d.setPixel(x, y, color)
 }
 
-// DrawText draws text at cell coordinates with fg/bg
+// DrawText draws text at cell coordinates with fg/bg - uses AA if available
 func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if cx >= d.Cols || cy >= d.Rows || text == "" {
 		return
@@ -323,14 +352,18 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if len(text) > maxChars {
 		text = text[:maxChars]
 	}
-	if d.useFbink {
+	// Prefer AA rendering when we have a buffer (mmap or offscreen)
+	if d.buf != nil && goFontRegular != nil {
+		d.DrawTextAA(cx, cy, text, fg, bg, false)
+		return
+	}
+	if d.useFbink && d.buf == nil {
 		px := cx * CellSize
 		py := cy * CellSize
 		fgName := grayName(fg)
 		bgName := grayName(bg)
 		cmd := exec.Command(d.fbink, "-q", "-b", "-S", "3", "-F", "VGA", "-C", fgName, "-B", bgName, "-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py), text)
 		if err := cmd.Run(); err != nil {
-			// fallback without -F
 			cmd2 := exec.Command(d.fbink, "-q", "-b", "-S", "3", "-C", fgName, "-B", bgName, "-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py), text)
 			_ = cmd2.Run()
 		}
@@ -397,6 +430,27 @@ func (d *Display) InvertRect(x, y, w, h int) {
 func (d *Display) Refresh() {
 	if d.simulate {
 		return
+	}
+	// If we have offscreen buffer (fbink+AA without mmap), blit to fb first
+	if d.useFbink && !d.mmaped && d.buf != nil && d.fd != nil {
+		// Write buffer to /dev/fb0
+		if d.BPP == 8 {
+			// offscreen stride == Width
+			if d.Stride == d.Width {
+				_, _ = d.fd.Seek(0, 0)
+				_, _ = d.fd.Write(d.buf)
+			} else {
+				for y := 0; y < d.Height; y++ {
+					off := y * d.Stride
+					_, _ = d.fd.Seek(int64(off), 0)
+					start := y * d.Width
+					end := start + d.Width
+					if end <= len(d.buf) {
+						_, _ = d.fd.Write(d.buf[start:end])
+					}
+				}
+			}
+		}
 	}
 	if d.fbink != "" {
 		cmd := exec.Command(d.fbink, "-q", "-s", "-f", "-W", "GC16", "-w")
