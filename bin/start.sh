@@ -35,8 +35,12 @@ echo "Stopping awesome..." >> "$LOG"
 killall -STOP awesome 2>> "$LOG"
 usleep 250000
 
+# Fix FAT exec bit
+chmod +x "$EXT_DIR/kindlecord" 2>> "$LOG"
+chmod +x "$EXT_DIR/kindlecord-arm" 2>> "$LOG"
+
 # Prefer native Go binary
-if [ -x "$EXT_DIR/kindlecord" ]; then
+if [ -f "$EXT_DIR/kindlecord" ]; then
     echo "Using: $EXT_DIR/kindlecord (Go)" >> "$LOG"
     "$EXT_DIR/kindlecord" >> "$LOG" 2>&1
     EXIT=$?
@@ -44,9 +48,9 @@ if [ -x "$EXT_DIR/kindlecord" ]; then
     exit $EXIT
 fi
 
-if [ -x "$EXT_DIR/kindlecord-arm" ]; then
+if [ -f "$EXT_DIR/kindlecord-arm" ]; then
     echo "Using: $EXT_DIR/kindlecord-arm (Go ARM)" >> "$LOG"
-    "$EXT_DIR/kindlecord-arm" >> "$LOG" 2>&1
+    "$EXT_DIR/kindlecord-arm" >> "$LOG" 2>> "$LOG" 2>&1
     EXIT=$?
     echo "Exit code: $EXIT" >> "$LOG"
     exit $EXIT
