@@ -46,6 +46,9 @@ echo "Stopping awesome..." >> "$LOG"
 killall -STOP awesome 2>> "$LOG"
 usleep 250000
 
+# Disable power button suspend (max77696-onkey)
+echo 0 > /sys/devices/platform/imx-i2c.0/i2c-0/0-003c/max77696-onkey.0/onkey_down_ctrl 2>> "$LOG" || true
+
 chmod +x "$EXT_DIR/kindlecord" 2>> "$LOG"
 chmod +x "$EXT_DIR/kindlecord-arm" 2>> "$LOG"
 chmod +x "$EXT_DIR/bin/fbink" 2>> "$LOG"
