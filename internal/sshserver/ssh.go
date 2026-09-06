@@ -79,24 +79,58 @@ func handleConn(nconn net.Conn, config *ssh.ServerConfig) {
 
 func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request) {
 	defer ch.Close()
-	// Start shell
-	cmd := exec.Command("/bin/sh")
-	cmd.Env = []string{"TERM=xterm"}
-	stdin, _ := cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(ch, "failed to start shell: %v\r\n", err)
-		return
-	}
-	go io.Copy(stdin, ch)
-	go io.Copy(ch, stdout)
-	go io.Copy(ch.Stderr(), stderr)
-
+	var cmd *exec.Cmd
+	var stdin io.WriteCloser
+	var stdout, stderr io.ReadCloser
+	// Handle requests
 	for req := range reqs {
 		switch req.Type {
-		case "shell", "exec":
+		case "exec":
+			var payload = struct{ Command string }{}
+			if err := ssh.Unmarshal(req.Payload, &payload); err != nil {
+				req.Reply(false, nil)
+				continue
+			}
 			req.Reply(true, nil)
+			cmd = exec.Command("/bin/sh", "-c", payload.Command)
+			stdin, _ = cmd.StdinPipe()
+			stdout, _ = cmd.StdoutPipe()
+			stderr, _ = cmd.StderrPipe()
+			if err := cmd.Start(); err != nil {
+				fmt.Fprintf(ch, "failed: %v\r\n", err)
+				return
+			}
+			go io.Copy(stdin, ch)
+			go func() {
+				io.Copy(ch, stdout)
+				ch.CloseWrite()
+			}()
+			go io.Copy(ch.Stderr(), stderr)
+			waitErr := cmd.Wait()
+			exitStatus := 0
+			if waitErr != nil {
+				if exitErr, ok := waitErr.(*exec.ExitError); ok {
+					exitStatus = exitErr.ExitCode()
+				} else {
+					exitStatus = 1
+				}
+			}
+			ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{uint32(exitStatus)}))
+			return
+		case "shell":
+			req.Reply(true, nil)
+			cmd = exec.Command("/bin/sh")
+			cmd.Env = []string{"TERM=xterm"}
+			stdin, _ = cmd.StdinPipe()
+			stdout, _ = cmd.StdoutPipe()
+			stderr, _ = cmd.StderrPipe()
+			if err := cmd.Start(); err != nil {
+				fmt.Fprintf(ch, "failed to start shell: %v\r\n", err)
+				return
+			}
+			go io.Copy(stdin, ch)
+			go io.Copy(ch, stdout)
+			go io.Copy(ch.Stderr(), stderr)
 		case "pty-req":
 			req.Reply(true, nil)
 		case "window-change":
@@ -105,5 +139,7 @@ func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			req.Reply(false, nil)
 		}
 	}
-	cmd.Wait()
+	if cmd != nil {
+		cmd.Wait()
+	}
 }
