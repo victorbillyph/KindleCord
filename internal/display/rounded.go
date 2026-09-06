@@ -106,4 +106,26 @@ func (d *Display) DrawRoundRect(x, y, w, h, radius int, color uint8, thickness i
 	}
 }
 
+// DrawRoundRectBorder draws just the rounded border (outline) efficiently,
+// leaving the inside untouched. Implemented as an outer fill + inner clear of
+// the border color inset, so it is 2 fbink calls on Kindle, not N pixels.
+func (d *Display) DrawRoundRectBorder(x, y, w, h, radius int, color uint8) {
+	if radius <= 0 {
+		d.Rect(x, y, w, h, color, 1)
+		return
+	}
+	// draw outer edge ring: fill full, then re-fill inner with the caller's
+	// background would need bg color; instead draw the ring with 4 lines.
+	// Top/bottom/left/right edges only (corners approximated by edge overlap
+	// on the pixel ring).
+	d.FillRect(x, y, w, 1, color)
+	d.FillRect(x, y+h-1, w, 1, color)
+	d.FillRect(x, y, 1, h, color)
+	d.FillRect(x+w-1, y, 1, h, color)
+	// rounded corner dots
+	for _, c := range [][2]int{{x + 1, y + 1}, {x + w - 2, y + 1}, {x + 1, y + h - 2}, {x + w - 2, y + h - 2}} {
+		d.Pixel(c[0], c[1], color)
+	}
+}
+
 

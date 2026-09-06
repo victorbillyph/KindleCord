@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"kindlecord/internal/server"
 	"kindlecord/internal/sshserver"
 	"kindlecord/internal/ui"
+	"kindlecord/internal/updater"
 )
 
 const authPort = 8080
@@ -287,10 +289,69 @@ func main() {
 	msgScreen := ui.NewMessageScreen()
 	app.Add("messages", msgScreen)
 
+	statusDialog := ui.NewDialog("Status", "", nil)
+	app.Add("status", statusDialog)
+
 	var showDMs func()
 	var showChannels func(int)
-
+	var showStatus func(title, message string)
 	var sidebarArgs func() map[string]interface{}
+
+	showStatus = func(title, message string) {
+		statusDialog.OnOK = func() {
+			app.Show("home", sidebarArgs())
+		}
+		app.Show("status", map[string]interface{}{
+			"title":   title,
+			"message": message,
+			"on_ok":   statusDialog.OnOK,
+		})
+	}
+
+	checkForUpdates := func() {
+		go func() {
+			tag, url, hasUpdate, err := updater.CheckLatest()
+			if err != nil {
+				log.Printf("[UPDATE] check failed: %v", err)
+				showStatus("Update Error", err.Error())
+				return
+			}
+			if !hasUpdate {
+				showStatus("No Updates", "Already on latest version")
+				return
+			}
+			log.Printf("[UPDATE] new version: %s", tag)
+			// ask first, then download & install
+			confirmDialog := ui.NewDialog("Update Available", "New version "+tag+" is available.\nDownload and install now?", nil)
+			app.Add("update_confirm", confirmDialog)
+			confirmDialog.OnOK = func() {
+				showStatus("Downloading", "Downloading "+tag+"...")
+				go func() {
+					tmpPath, err := updater.Download(url)
+					if err != nil {
+						log.Printf("[UPDATE] download failed: %v", err)
+						showStatus("Download Error", err.Error())
+						return
+					}
+					log.Printf("[UPDATE] downloaded to %s, installing...", tmpPath)
+					showStatus("Installing", "Installing "+tag+"...")
+					if err := updater.Install(tmpPath); err != nil {
+						log.Printf("[UPDATE] install failed: %v", err)
+						showStatus("Install Error", err.Error())
+						return
+					}
+					log.Printf("[UPDATE] installed, restarting")
+					os.Exit(0)
+				}()
+			}
+			app.Show("update_confirm", map[string]interface{}{
+				"title":   "Update Available",
+				"message": "New version " + tag + " is available.\nDownload and install now?",
+				"on_ok":   confirmDialog.OnOK,
+			})
+		}()
+	}
+
 	sidebarArgs = func() map[string]interface{} {
 		serverNames := make([]string, len(st.guilds))
 		for i, g := range st.guilds {
@@ -308,6 +369,9 @@ func main() {
 				st.selDM = false
 				st.selServer = idx
 				showChannels(idx)
+			},
+			"on_update_click": func() {
+				checkForUpdates()
 			},
 		}
 	}
@@ -417,6 +481,17 @@ func main() {
 	st.guilds = guilds
 	st.selDM = true
 	showDMs()
+
+	// prevent Kindle auto-suspend
+	go func() {
+		procs := []string{"com.lab126.powerd"}
+		for {
+			for _, svc := range procs {
+				_ = exec.Command("lipc-set-prop", svc, "preventScreenSaver", "true").Run()
+			}
+			time.Sleep(20 * time.Second)
+		}
+	}()
 
 	powerMainCh := make(chan bool, 1)
 	go func() {

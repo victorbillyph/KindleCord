@@ -2,12 +2,13 @@ package ui
 
 import (
 	"strings"
+	"sync"
 
 	"kindlecord/internal/display"
 )
 
 const (
-	SIDEBAR_W = 60
+	SIDEBAR_W = 80
 	HEADER_H  = 44
 	CONTENT_X = SIDEBAR_W + 2
 
@@ -18,6 +19,7 @@ const (
 	BG_ICON     = 0x44
 	BG_DM       = 0x58
 	BG_CARD     = 0xFF
+	GCARD_ALT   = 0xF6
 	BG_BTN      = 0x33
 
 	FG_WHITE   = 0xFF
@@ -55,12 +57,37 @@ type Component interface {
 // ── Sidebar ──────────────────────────────────────────────────────────
 
 type Sidebar struct {
-	Servers      []string
-	SelectedDM   bool
-	ServerIdx    int
-	OnDMClick    func()
+	Servers       []string
+	SelectedDM    bool
+	ServerIdx     int
+	OnDMClick     func()
 	OnServerClick func(idx int)
-	contentH     int
+	OnUpdateClick func()
+	contentH      int
+	scroll        int
+
+	iconSize int
+	iconGap  int
+	iconStart int
+}
+
+const (
+	sbIconSize = 44
+	sbIconGap  = 12
+	sbDMY      = 16
+	sbDividerY = 80
+)
+
+func (s *Sidebar) iconY(i int) int {
+	return s.iconStart + i*(sbIconSize+sbIconGap)
+}
+
+func (s *Sidebar) serverTop() int {
+	return sbDividerY + 12
+}
+
+func (s *Sidebar) fitIcons(cmds int) int {
+	return (sbIconSize + sbIconGap) * cmds
 }
 
 func (s *Sidebar) Render(d *display.Display) {
@@ -70,20 +97,35 @@ func (s *Sidebar) Render(d *display.Display) {
 	}
 	d.FillRect(0, 0, SIDEBAR_W, h, BG_SIDEBAR)
 
-	dmY := 14
+	// DM icon
 	var dmBg uint8 = BG_SIDEBAR
 	if s.SelectedDM {
 		dmBg = BG_SELECTED
 	}
-	d.FillRoundRect(10, dmY, 40, 40, 20, dmBg)
-	d.FillRoundRect(12, dmY+2, 36, 36, 18, BG_DM)
-	d.DrawTextPixel(23, dmY+10, FT_ICON, "D", FG_WHITE, BG_DM)
+	d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, sbDMY, sbIconSize, sbIconSize, sbIconSize/2, dmBg)
+	d.FillRoundRect((SIDEBAR_W-sbIconSize+4)/2, sbDMY+2, sbIconSize-4, sbIconSize-4, (sbIconSize-4)/2, BG_DM)
+	d.DrawTextPixel(SIDEBAR_W/2-7, sbDMY+13, FT_ICON, "D", FG_WHITE, BG_DM)
 
-	d.FillRect(16, 60, 28, 2, 0x55)
+	d.FillRect(SIDEBAR_W/2-14, sbDividerY, 28, 2, 0x55)
 
-	y := 72
-	for i, name := range s.Servers {
-		if y+40 > h {
+	// compute how many icons fit
+	s.iconStart = s.serverTop()
+	maxVisible := (h - s.iconStart) / (sbIconSize + sbIconGap)
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	maxScroll := len(s.Servers) - maxVisible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if s.scroll > maxScroll {
+		s.scroll = maxScroll
+	}
+
+	y := s.iconStart
+	for i := s.scroll; i < len(s.Servers); i++ {
+		name := s.Servers[i]
+		if y+sbIconSize > h {
 			break
 		}
 		letter := "?"
@@ -92,11 +134,32 @@ func (s *Sidebar) Render(d *display.Display) {
 		}
 		var ibg uint8 = BG_ICON
 		if !s.SelectedDM && s.ServerIdx == i {
-			d.FillRoundRect(10, y, 40, 40, 20, BG_SELECTED)
+			d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, y, sbIconSize, sbIconSize, sbIconSize/2, BG_SELECTED)
 		}
-		d.FillRoundRect(12, y+2, 36, 36, 18, ibg)
-		d.DrawTextPixel(23, y+10, FT_ICON, letter, FG_WHITE, ibg)
-		y += 48
+		d.FillRoundRect((SIDEBAR_W-sbIconSize+4)/2, y+2, sbIconSize-4, sbIconSize-4, (sbIconSize-4)/2, ibg)
+		d.DrawTextPixel(SIDEBAR_W/2-7, y+13, FT_ICON, letter, FG_WHITE, ibg)
+		// selection indicator bar
+		if !s.SelectedDM && s.ServerIdx == i {
+			d.FillRoundRect(4, y+6, 4, sbIconSize-12, 2, FG_WHITE)
+		}
+		y += sbIconSize + sbIconGap
+	}
+
+	// scroll arrows at top/bottom of sidebar
+	if s.scroll > 0 {
+		d.FillRoundRect(6, s.serverTop()-6, SIDEBAR_W-12, 10, 3, BG_SIDEBAR)
+		d.DrawTextPixel(SIDEBAR_W/2-4, s.serverTop()-6, FT_SMALL, "^", FG_WHITE, BG_SIDEBAR)
+	}
+	if s.scroll+maxVisible < len(s.Servers) {
+		ay := h - 16
+		d.DrawTextPixel(SIDEBAR_W/2-4, ay, FT_SMALL, "v", FG_WHITE, BG_SIDEBAR)
+	}
+
+	// update icon at very bottom
+	uy := h - sbIconSize - 8
+	if uy > s.serverTop() {
+		d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, uy, sbIconSize, sbIconSize, sbIconSize/2, BG_SIDEBAR)
+		d.DrawTextPixel(SIDEBAR_W/2-7, uy+13, FT_ICON, "U", FG_WHITE, BG_SIDEBAR)
 	}
 }
 
@@ -104,21 +167,52 @@ func (s *Sidebar) HandleTouch(x, y int) {
 	if x >= SIDEBAR_W {
 		return
 	}
-	if y >= 14 && y <= 54 {
+	if y >= sbDMY && y <= sbDMY+sbIconSize {
 		if s.OnDMClick != nil {
 			s.OnDMClick()
 		}
 		return
 	}
-	serverY := 72
-	for i := range s.Servers {
-		if y >= serverY && y <= serverY+40 {
+	// server scroll controls
+	maxScroll := len(s.Servers)
+	if maxScroll > 0 {
+		maxVisible := (s.contentH - s.serverTop()) / (sbIconSize + sbIconGap)
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		maxScroll = maxScroll - maxVisible
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+	}
+	if y >= s.serverTop()-10 && y <= s.serverTop() && s.scroll > 0 {
+		s.scroll--
+		return
+	}
+	if y >= s.contentH-16 && y <= s.contentH && s.scroll < maxScroll {
+		s.scroll++
+		return
+	}
+	// update icon at bottom
+	if s.OnUpdateClick != nil {
+		uy := s.contentH - sbIconSize - 8
+		if y >= uy && y <= uy+sbIconSize {
+			s.OnUpdateClick()
+			return
+		}
+	}
+	// server icon
+	for i := s.scroll; i < len(s.Servers); i++ {
+		iy := s.iconY(i)
+		if iy == 0 {
+			s.iconStart = s.serverTop()
+		}
+		if y >= iy && y <= iy+sbIconSize {
 			if s.OnServerClick != nil {
 				s.OnServerClick(i)
 			}
 			return
 		}
-		serverY += 48
 	}
 }
 
@@ -193,10 +287,14 @@ func NewListItem(x, y, w, h int, text string, fg, bg uint8, cb func()) *ListItem
 }
 
 func (li *ListItem) Render(d *display.Display) {
-	if li.BG != BG_CONTENT {
-		d.FillRoundRect(li.X, li.Y, li.W, li.H, 4, li.BG)
+	// card with border
+	bg := li.BG
+	if bg == BG_CONTENT {
+		bg = BG_CARD
 	}
-	d.DrawTextPixel(li.X+8, li.Y+(li.H-12)/2, li.Size, li.Text, li.FG, li.BG)
+	d.FillRoundRect(li.X, li.Y, li.W, li.H, 6, bg)
+	d.DrawRoundRectBorder(li.X, li.Y, li.W, li.H, 6, FG_BORDER)
+	d.DrawTextPixel(li.X+14, li.Y+(li.H-12)/2, li.Size, li.Text, li.FG, bg)
 }
 
 func (li *ListItem) Contains(x, y int) bool {
@@ -233,6 +331,7 @@ func (sb *ScrollBar) Render(d *display.Display) {
 // ── App ──────────────────────────────────────────────────────────────
 
 type App struct {
+	mu      sync.Mutex
 	Display *display.Display
 	Screens map[string]Screen
 	Current string
@@ -256,6 +355,8 @@ func (a *App) Add(name string, s Screen) {
 }
 
 func (a *App) Show(name string, args map[string]interface{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.Current = name
 	scr := a.Screens[name]
 	if scr != nil {
@@ -265,6 +366,8 @@ func (a *App) Show(name string, args map[string]interface{}) {
 }
 
 func (a *App) Touch(x, y int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.Current == "" {
 		return
 	}
@@ -413,6 +516,11 @@ func (s *HomeScreen) OnShow(args map[string]interface{}) {
 			s.Sidebar.OnServerClick = f
 		}
 	}
+	if v, ok := args["on_update_click"]; ok {
+		if f, ok := v.(func()); ok {
+			s.Sidebar.OnUpdateClick = f
+		}
+	}
 	if v, ok := args["title"]; ok {
 		if vv, ok := v.(string); ok {
 			s.Title = vv
@@ -450,8 +558,9 @@ func (s *HomeScreen) Render(d *display.Display) {
 
 	contentW := d.Width - CONTENT_X - 6
 	startY := HEADER_H + 8
-	itemH := 40
-	visible := (d.Height - HEADER_H - 56) / itemH
+	itemH := 44
+	itemGap := 4
+	visible := (d.Height - HEADER_H - 56) / (itemH + itemGap)
 	if visible < 1 {
 		visible = 1
 	}
@@ -481,17 +590,17 @@ func (s *HomeScreen) Render(d *display.Display) {
 		s.Items[i].W = contentW
 		s.Items[i].H = itemH
 		s.Items[i].Render(d)
-		y += itemH
+		y += itemH + itemGap
 	}
 
 	if s.TotalItems > visible {
 		sb := &ScrollBar{
-			X: CONTENT_X + contentW - 6,
-			Y: startY,
-			H: visible * itemH,
-			Total: s.TotalItems,
+			X:       CONTENT_X + contentW - 6,
+			Y:       startY,
+			H:       (visible * (itemH + itemGap)) - itemGap,
+			Total:   s.TotalItems,
 			Visible: visible,
-			Offset: s.scroll,
+			Offset:  s.scroll,
 		}
 		sb.Render(d)
 	}
@@ -516,9 +625,10 @@ func (s *HomeScreen) OnTouch(x, y int) bool {
 	}
 
 	d := s.App.Display
-	itemH := 40
+	itemH := 44
+	itemGap := 4
 	startY := HEADER_H + 8
-	visible := (d.Height - HEADER_H - 56) / itemH
+	visible := (d.Height - HEADER_H - 56) / (itemH + itemGap)
 	if visible < 1 {
 		visible = 1
 	}
@@ -554,7 +664,7 @@ func (s *HomeScreen) OnTouch(x, y int) bool {
 			clickedIdx = i
 			break
 		}
-		itemY += itemH
+		itemY += itemH + itemGap
 	}
 
 	if clickedIdx >= 0 && clickedIdx < len(s.Items) && s.Items[clickedIdx].Callback != nil {
@@ -608,6 +718,11 @@ func (s *MessageScreen) OnShow(args map[string]interface{}) {
 			s.Sidebar.OnServerClick = f
 		}
 	}
+	if v, ok := args["on_update_click"]; ok {
+		if f, ok := v.(func()); ok {
+			s.Sidebar.OnUpdateClick = f
+		}
+	}
 	if v, ok := args["title"]; ok {
 		if vv, ok := v.(string); ok {
 			s.Title = vv
@@ -636,15 +751,15 @@ func (s *MessageScreen) Render(d *display.Display) {
 	titleText := "#" + strings.TrimPrefix(s.Title, "#")
 	d.DrawTextPixel(SIDEBAR_W+12, 12, FT_TITLE, titleText, FG_WHITE, BG_HEADER)
 
-	contentX := CONTENT_X
-	contentW := d.Width - contentX - 6
-	startY := HEADER_H + 8
-	lineH := 34
+	contentX := CONTENT_X + 4
+	contentW := d.Width - contentX - 10
+	startY := HEADER_H + 10
+	msgH := 52
+	msgGap := 8
 
 	type msgView struct {
-		author string
+		author  string
 		content string
-		isHeader bool
 	}
 	var views []msgView
 	for _, msg := range s.Messages {
@@ -656,7 +771,7 @@ func (s *MessageScreen) Render(d *display.Display) {
 		}
 		content, _ := msg["content"].(string)
 		content = strings.ReplaceAll(content, "\n", " ")
-		views = append(views, msgView{author: author, content: content, isHeader: true})
+		views = append(views, msgView{author: author, content: content})
 	}
 
 	totalLines := len(views)
@@ -666,7 +781,7 @@ func (s *MessageScreen) Render(d *display.Display) {
 		return
 	}
 
-	visible := (d.Height - HEADER_H - 56) / lineH
+	visible := (d.Height - HEADER_H - 80) / (msgH + msgGap)
 	if visible < 1 {
 		visible = 1
 	}
@@ -674,8 +789,7 @@ func (s *MessageScreen) Render(d *display.Display) {
 	if s.scroll > 0 {
 		d.FillRoundRect(contentX, startY, contentW, 32, 6, BG_CARD)
 		d.DrawTextPixel(contentX+contentW/2-8, startY+8, FT_SMALL, "  ^  ", FG_MUTED, BG_CARD)
-		startY += 36
-		visible--
+		startY += 40
 	}
 
 	maxScroll := totalLines - visible
@@ -694,19 +808,25 @@ func (s *MessageScreen) Render(d *display.Display) {
 	y := startY
 	for i := s.scroll; i < endIdx; i++ {
 		v := views[i]
-		d.DrawTextPixel(contentX+8, y+2, FT_MSG, v.author, BG_DM, BG_CONTENT)
+		// message card
+		var bg uint8 = BG_CARD
+		if i%2 == 1 {
+			bg = GCARD_ALT
+		}
+		d.FillRoundRect(contentX, y, contentW, msgH, 8, bg)
+		d.DrawRoundRectBorder(contentX, y, contentW, msgH, 8, FG_BORDER)
+		// author
+		d.DrawTextPixel(contentX+12, y+6, FT_LABEL, v.author, BG_DM, bg)
+		// timestamp separator + content
 		if len(v.content) > 0 {
-			maxChars := contentW / 6
+			maxChars := contentW / 7
 			txt := v.content
 			if len(txt) > maxChars {
 				txt = txt[:maxChars-1] + "~"
 			}
-			d.DrawTextPixel(contentX+8, y+18, FT_SMALL, txt, FG_BLACK, BG_CONTENT)
+			d.DrawTextPixel(contentX+12, y+26, FT_SMALL, txt, FG_BLACK, bg)
 		}
-		y += lineH
-		if i < endIdx-1 {
-			d.FillRect(contentX+8, y-4, contentW-16, 1, FG_DIVIDER)
-		}
+		y += msgH + msgGap
 	}
 
 	if totalLines > visible && endIdx < totalLines {
@@ -732,10 +852,11 @@ func (s *MessageScreen) OnTouch(x, y int) bool {
 	}
 
 	d := s.App.Display
-	lineH := 34
-	startY := HEADER_H + 8
+	msgH := 52
+	msgGap := 8
+	startY := HEADER_H + 10
 	totalLines := len(s.Messages)
-	visible := (d.Height - HEADER_H - 56) / lineH
+	visible := (d.Height - HEADER_H - 80) / (msgH + msgGap)
 	if visible < 1 {
 		visible = 1
 	}
@@ -802,10 +923,14 @@ func (d2 *Dialog) build() {
 	d := d2.App.Display
 	d2.items = nil
 
-	d2.items = append(d2.items, NewLabel(CONTENT_X+12, 64, d2.Message, FT_LABEL, FG_BLACK))
+	y := 64
+	for _, line := range strings.Split(d2.Message, "\n") {
+		d2.items = append(d2.items, NewLabel(CONTENT_X+12, y, line, FT_LABEL, FG_BLACK))
+		y += 22
+	}
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
-	d2.items = append(d2.items, NewButton(btnX, 120, "OK", d2.OnOK))
+	d2.items = append(d2.items, NewButton(btnX, y+12, "OK", d2.OnOK))
 }
 
 func (d2 *Dialog) Render(d *display.Display) {
