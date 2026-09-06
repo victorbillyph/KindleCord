@@ -509,67 +509,67 @@ func (s *LoginScreen) build() {
 
 func (s *LoginScreen) buildWelcome(d *display.Display, urlStr string) {
 	y := 70
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Bem-vindo ao KindleCord", FT_TITLE, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Welcome to KindleCord", FT_TITLE, FG_BLACK))
 	y += 38
 
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Um cliente Discord para o seu", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "A Discord client for your", FT_LABEL, FG_BLACK))
 	y += 26
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Kindle e-ink.", FT_LABEL, FG_BLACK))
 	y += 36
 
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Navegue em servidores, canais", FT_SMALL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Browse servers, channels,", FT_SMALL, FG_MUTED))
 	y += 22
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "e leia mensagens na tela", FT_SMALL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "and read messages on the", FT_SMALL, FG_MUTED))
 	y += 22
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "eletrônica, sem distrações.", FT_SMALL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "e-ink display, distraction-free.", FT_SMALL, FG_MUTED))
 	y += 36
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
-	s.items = append(s.items, NewButton(btnX+20, d.Height-70, "Próximo >", func() { s.page = 1; s.build() }))
+	s.items = append(s.items, NewButton(btnX+20, d.Height-70, "Next >", func() { s.page = 1; s.build() }))
 }
 
 func (s *LoginScreen) buildConfigure(d *display.Display, urlStr string) {
 	y := 70
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Acesse no Browser para Configurar", FT_TITLE, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Access on Browser to Configure", FT_TITLE, FG_BLACK))
 	y += 38
 
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, urlStr, FT_TITLE, FG_BLACK))
 	y += 40
 
 	if s.SSHInfo != "" {
-		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Ou SSH:", FT_SMALL, FG_MUTED))
+		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Or SSH:", FT_SMALL, FG_MUTED))
 		y += 24
 		s.items = append(s.items, NewLabel(CONTENT_X+12, y, s.SSHInfo, FT_SMALL, FG_BLACK))
 		y += 36
 	}
 
 	y += 10
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Abra a URL acima no seu", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Open the URL above on your", FT_LABEL, FG_BLACK))
 	y += 26
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "computador/celular (mesmo Wi-Fi)", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "computer/phone (same Wi-Fi)", FT_LABEL, FG_BLACK))
 	y += 26
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Cole o token e clique Log in", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Paste token and click Log in", FT_LABEL, FG_BLACK))
 	y += 36
 
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Aguardando token...", FT_SMALL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Waiting for token...", FT_SMALL, FG_MUTED))
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
-	s.items = append(s.items, NewButton(btnX-100, d.Height-70, "< Voltar", func() { s.page = 0; s.build() }))
-	s.items = append(s.items, NewButton(btnX+20, d.Height-70, "Próximo >", func() { s.page = 2; s.build() }))
+	s.items = append(s.items, NewButton(btnX-100, d.Height-70, "< Back", func() { s.page = 0; s.build() }))
+	s.items = append(s.items, NewButton(btnX+20, d.Height-70, "Next >", func() { s.page = 2; s.build() }))
 }
 
 func (s *LoginScreen) buildSuccess(d *display.Display) {
 	y := 90
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Tudo certo!", FT_TITLE, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "All set!", FT_TITLE, FG_BLACK))
 	y += 40
 
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Token recebido com sucesso.", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Token received successfully.", FT_LABEL, FG_BLACK))
 	y += 26
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Clique abaixo para entrar no app.", FT_LABEL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Click below to enter the app.", FT_LABEL, FG_MUTED))
 	y += 40
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
-	s.items = append(s.items, NewButton(btnX, d.Height-70, "Concluir setup", func() {
+	s.items = append(s.items, NewButton(btnX, d.Height-70, "Finish setup", func() {
 		if s.OnFinish != nil {
 			s.OnFinish()
 		}
