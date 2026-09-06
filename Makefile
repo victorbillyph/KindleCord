@@ -3,7 +3,7 @@ PKG=kindlecord
 BUILD_DIR=build
 GOFLAGS=-trimpath
 
-.PHONY: all build build-arm clean install test run sim
+.PHONY: all build build-arm build-all clean install test run sim strip package
 
 all: build
 
@@ -37,3 +37,16 @@ sim: build
 strip:
 	strip $(BUILD_DIR)/$(APP)* 2>/dev/null || true
 	ls -lh $(BUILD_DIR)/
+
+# Build the KUAL extension zip (drop the inner KindleCord/ folder into
+# /mnt/us/extensions to install). Produces $(BUILD_DIR)/KindleCord.zip
+package: build-arm
+	rm -rf /tmp/kc-staging/KindleCord
+	mkdir -p /tmp/kc-staging/KindleCord
+	cp $(BUILD_DIR)/$(APP)-arm /tmp/kc-staging/KindleCord/kindlecord
+	cp -r bin menu.json config.xml README.md /tmp/kc-staging/KindleCord/
+	mkdir -p data
+	cp data/config.example.json /tmp/kc-staging/KindleCord/data.example.json
+	cd /tmp/kc-staging && rm -f $(CURDIR)/$(BUILD_DIR)/KindleCord.zip && zip -r $(CURDIR)/$(BUILD_DIR)/KindleCord.zip KindleCord/
+	ls -lh $(BUILD_DIR)/KindleCord.zip
+	@echo "Unzip to /mnt/us/extensions to install."
