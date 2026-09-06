@@ -359,7 +359,7 @@ func (d *Display) Pixel(x, y int, color uint8) {
 	d.setPixel(x, y, color)
 }
 
-// DrawText draws text at cell coordinates with fg/bg - uses AA if available
+// DrawText draws text at cell coordinates with fg/bg - bitmap for now (AA disabled for debug)
 func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if cx >= d.Cols || cy >= d.Rows || text == "" {
 		return
@@ -371,11 +371,11 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if len(text) > maxChars {
 		text = text[:maxChars]
 	}
-	// Prefer AA rendering when we have a buffer (mmap or offscreen)
-	if d.buf != nil && goFontRegular != nil {
-		d.DrawTextAA(cx, cy, text, fg, bg, false)
-		return
-	}
+	// AA disabled for striped debug - use bitmap
+	// if d.buf != nil && goFontRegular != nil {
+	// 	d.DrawTextAA(cx, cy, text, fg, bg, false)
+	// 	return
+	// }
 	if d.useFbink && d.buf == nil {
 		px := cx * CellSize
 		py := cy * CellSize
