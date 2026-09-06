@@ -179,8 +179,9 @@ type PowerWatcher struct {
 }
 
 func NewPowerWatcher(path string) *PowerWatcher {
-	// Try all likely power devices: event0, event1, event2
-	candidates := []string{"/dev/input/event0", "/dev/input/event1", "/dev/input/event2"}
+	// Power button is on event0 (max77696-onkey). Touch is on event1.
+	// Only open the actual power button device to avoid stealing touch events.
+	candidates := []string{"/dev/input/event0"}
 	if path != "" && path != "/dev/input/event0" {
 		candidates = append([]string{path}, candidates...)
 	}
