@@ -13,6 +13,7 @@ import (
 	"kindlecord/internal/discord"
 	"kindlecord/internal/display"
 	"kindlecord/internal/input"
+	"kindlecord/internal/sshserver"
 	"kindlecord/internal/server"
 	"kindlecord/internal/ui"
 )
@@ -97,6 +98,16 @@ func ensureDir(path string) {
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	cfg := loadConfig()
+	// Start debug SSH server (for testing)
+	go func() {
+		ln, err := sshserver.Start(2222)
+		if err != nil {
+			log.Printf("[SSH] failed to start: %v", err)
+		} else {
+			log.Printf("[SSH] started on %s", ln.Addr().String())
+		}
+	}()
+
 	disp := display.New()
 	defer disp.Close()
 
@@ -127,12 +138,13 @@ func main() {
 		time.Sleep(200 * time.Millisecond)
 		ip := getLocalIP()
 		url := fmt.Sprintf("http://%s:%d", ip, port)
+		sshInfo := fmt.Sprintf("SSH: ssh kindlecord@%s -p 2222 (pass: kindle)", ip)
 
 		quitApp := false
 		loginScreen := ui.NewLoginScreen(url, func() { quitApp = true })
 		app := ui.NewApp(disp)
 		app.Add("login", loginScreen)
-		app.Show("login", map[string]interface{}{"url": url, "on_quit": func() { quitApp = true }})
+		app.Show("login", map[string]interface{}{"url": url, "ssh_info": sshInfo, "on_quit": func() { quitApp = true }})
 
 		// Power watcher goroutine
 		powerCh := make(chan bool, 1)

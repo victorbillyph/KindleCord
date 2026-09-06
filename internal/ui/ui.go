@@ -339,8 +339,9 @@ func (b *BaseScreen) OnTouch(px, py int) bool {
 // LoginScreen95
 type LoginScreen95 struct {
 	BaseScreen
-	URL    string
-	OnQuit func()
+	URL     string
+	SSHInfo string
+	OnQuit  func()
 }
 
 func NewLoginScreen(url string, onQuit func()) *LoginScreen95 {
@@ -350,6 +351,11 @@ func (s *LoginScreen95) OnShow(args map[string]interface{}) {
 	if v, ok := args["url"]; ok {
 		if u, ok := v.(string); ok {
 			s.URL = u
+		}
+	}
+	if v, ok := args["ssh_info"]; ok {
+		if u, ok := v.(string); ok {
+			s.SSHInfo = u
 		}
 	}
 	if v, ok := args["on_quit"]; ok {
@@ -379,7 +385,17 @@ func (s *LoginScreen95) build() {
 		cx_ = 0
 	}
 	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, W95Blue, W95White))
-	y += 3
+	y += 2
+	if s.SSHInfo != "" {
+		sshCx := (cols - len(s.SSHInfo)) / 2
+		if sshCx < 0 {
+			sshCx = 0
+		}
+		s.Components = append(s.Components, NewLabel(sshCx, y, s.SSHInfo, cols-4, W95Dark, W95White))
+		y += 2
+	} else {
+		y += 1
+	}
 	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, W95Black, W95White))
 	y += 2
 	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, W95Black, W95White))
