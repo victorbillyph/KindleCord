@@ -319,7 +319,7 @@ func (b *Box) Render(d *display.Display) {
 }
 
 func (b *Box) Contains(x, y int) bool { return false }
-func (b *Box) Tap(x, y int) bool       { return false }
+func (b *Box) Tap(x, y int) bool      { return false }
 func (l *Label) Tap(x, y int) bool    { return false }
 
 // ── ListItem ─────────────────────────────────────────────────────────
@@ -441,7 +441,6 @@ type LoginScreen struct {
 	URL     string
 	SSHInfo string
 	OnQuit  func()
-	page    int
 	items   []Component
 }
 
@@ -467,7 +466,6 @@ func (s *LoginScreen) OnShow(args map[string]interface{}) {
 			s.OnQuit = f
 		}
 	}
-	s.page = 0
 	s.build()
 }
 
@@ -475,90 +473,32 @@ func (s *LoginScreen) build() {
 	d := s.App.Display
 	s.items = nil
 
-	y := 64
-	addL := func(text string, size int, fg uint8) {
-		s.items = append(s.items, NewLabel(CONTENT_X+8, y, text, size, fg))
-		y += 24
-	}
-	gap := func(h int) { y += h }
-
-	contentRight := d.Width - CONTENT_X - 40
-
-	switch s.page {
-	case 0:
-		// welcome / about
-		y = 70
-		addL("Welcome to KindleCord", FT_TITLE, BG_DM)
-		y += 2
-		addL("A Discord client that runs on", FT_LABEL, FG_BLACK)
-		addL("your Kindle e-ink screen.", FT_LABEL, FG_BLACK)
-		gap(6)
-		addL("Browse servers, channels and", FT_LABEL, FG_BLACK)
-		addL("read your messages — on a calm,", FT_LABEL, FG_BLACK)
-		addL("paper-like display.", FT_LABEL, FG_BLACK)
-		gap(18)
-		addL("What you can do:", FT_LABEL, FG_MUTED)
-		addL("  - Servers and channels list", FT_SMALL, FG_BLACK)
-		addL("  - Direct messages", FT_SMALL, FG_BLACK)
-		addL("  - Read messages on e-ink", FT_SMALL, FG_BLACK)
-		gap(18)
-		addL("You need a Discord user token to", FT_SMALL, FG_MUTED)
-		addL("log in. The next steps show you how.", FT_SMALL, FG_MUTED)
-
-	case 1:
-		// step 1: get the token
-		y = 70
-		addL("Step 1 of 2", FT_SMALL, FG_MUTED)
-		addL("Get your Discord token", FT_TITLE, BG_DM)
-		y += 2
-		addL("1. Open Discord in your web browser", FT_LABEL, FG_BLACK)
-		addL("2. Press Ctrl+Shift+I  (F12)", FT_LABEL, FG_BLACK)
-		addL("3. Click the Console tab", FT_LABEL, FG_BLACK)
-		addL("4. Type this command:", FT_LABEL, FG_BLACK)
-		y += 2
-		s.items = append(s.items, NewBox(CONTENT_X+8, y, contentRight, 34, "localStorage.getItem('token')", FT_LABEL, BG_DM, FG_WHITE))
-		y += 42
-		addL("5. Copy the result (between quotes)", FT_LABEL, FG_BLACK)
-		gap(12)
-		addL("Your token works like a password.", FT_SMALL, FG_MUTED)
-		addL("Never share it with anyone.", FT_SMALL, FG_MUTED)
-
-	case 2:
-		// step 2: send the token
-		y = 70
-		addL("Step 2 of 2", FT_SMALL, FG_MUTED)
-		addL("Send the token to this Kindle", FT_TITLE, BG_DM)
-		y += 4
-		addL("On your phone (same Wi-Fi) open:", FT_LABEL, FG_BLACK)
-		y += 2
-		url := s.URL
-		if url == "" {
-			url = "http://0.0.0.0:8080"
-		}
-		s.items = append(s.items, NewBox(CONTENT_X+8, y, contentRight, 38, url, FT_LABEL, BG_DM, FG_WHITE))
-		y += 50
-		addL("Paste the token there and tap Log in.", FT_LABEL, FG_BLACK)
-		gap(18)
-		if s.SSHInfo != "" {
-			addL("Or connect with SSH:", FT_SMALL, FG_MUTED)
-			addL(s.SSHInfo, FT_SMALL, FG_BLACK)
-			gap(10)
-		}
-		addL("Waiting for token...", FT_SMALL, FG_MUTED)
+	y := 70
+	url := s.URL
+	if url == "" {
+		url = "http://0.0.0.0:8080"
 	}
 
-	// navigation buttons
-	btnX := CONTENT_X + (d.Width-CONTENT_X-120)/2
-	switch s.page {
-	case 0:
-		s.items = append(s.items, NewButton(btnX+60, d.Height-60, "Next >", func() { s.page++; s.build() }))
-	case 1:
-		s.items = append(s.items, NewButton(btnX-100, d.Height-60, "< Back", func() { s.page--; s.build() }))
-		s.items = append(s.items, NewButton(btnX+20, d.Height-60, "Next >", func() { s.page++; s.build() }))
-	case 2:
-		s.items = append(s.items, NewButton(btnX-100, d.Height-60, "< Back", func() { s.page--; s.build() }))
-		s.items = append(s.items, NewButton(btnX+60, d.Height-60, "Exit", s.OnQuit))
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Open on your computer/phone:", FT_LABEL, FG_MUTED))
+	y += 28
+
+	// URL box
+	contentW := d.Width - CONTENT_X - 16
+	s.items = append(s.items, NewBox(CONTENT_X+8, y, contentW, 44, url, FT_LABEL, BG_DM, FG_WHITE))
+	y += 54
+
+	if s.SSHInfo != "" {
+		s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Or SSH:", FT_SMALL, FG_MUTED))
+		y += 22
+		s.items = append(s.items, NewLabel(CONTENT_X+8, y, s.SSHInfo, FT_SMALL, FG_BLACK))
+		y += 28
 	}
+
+	y += 10
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Waiting for token...", FT_SMALL, FG_MUTED))
+
+	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
+	s.items = append(s.items, NewButton(btnX, d.Height-60, "Exit", s.OnQuit))
 }
 
 func (s *LoginScreen) Render(d *display.Display) {
@@ -577,7 +517,7 @@ func (s *LoginScreen) OnTouch(x, y int) bool {
 	}
 	for _, c := range s.items {
 		if c.Tap(x, y) {
-			return true
+			return false
 		}
 	}
 	return false
