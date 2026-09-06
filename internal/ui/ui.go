@@ -7,31 +7,34 @@ import (
 )
 
 const (
-	BG        = 0xEE
-	CARD      = 0xFF
-	PRIMARY   = 0x22
-	ACCENT    = 0x44
-	TEXT      = 0x11
-	TEXTMUTED = 0x77
-	BORDER    = 0xCC
-	BTNBG     = 0x33
-	BTNFG     = 0xFF
-	GOVERLAY  = 0xF2
-)
+	SIDEBAR_W = 60
+	HEADER_H  = 44
+	CONTENT_X = SIDEBAR_W + 2
 
-const cell = display.CellSize
+	BG_SIDEBAR  = 0x33
+	BG_CONTENT  = 0xF2
+	BG_HEADER   = 0x22
+	BG_SELECTED = 0x55
+	BG_ICON     = 0x44
+	BG_DM       = 0x58
+	BG_CARD     = 0xFF
+	BG_BTN      = 0x33
+
+	FG_WHITE   = 0xFF
+	FG_BLACK   = 0x11
+	FG_MUTED   = 0x88
+	FG_DIVIDER = 0xBB
+	FG_BORDER  = 0xCC
+)
 
 const (
-	FontTitle   = 18
-	FontButton  = 14
-	FontLabel   = 12
-	FontSmall   = 10
-	FontClose   = 14
-	FontMsg     = 12
-	FontAuthor  = 12
+	FT_ICON  = 16
+	FT_TITLE = 14
+	FT_BTN   = 12
+	FT_LABEL = 12
+	FT_MSG   = 12
+	FT_SMALL = 10
 )
-
-func px(c int) int { return c * cell }
 
 func trunc(s string, max int) string {
 	if len(s) <= max {
@@ -43,230 +46,193 @@ func trunc(s string, max int) string {
 	return s[:max-1] + "~"
 }
 
-// Component interface
 type Component interface {
 	Render(d *display.Display)
-	Tap(px, py int) bool
-	Contains(px, py int) bool
+	Tap(x, y int) bool
+	Contains(x, y int) bool
 }
 
-// Button
-type Button95 struct {
-	CX, CY   int
-	Text     string
-	Callback func()
-	CW       int
-	W, H     int
-	Pressed  bool
+// ── Sidebar ──────────────────────────────────────────────────────────
+
+type Sidebar struct {
+	Servers      []string
+	SelectedDM   bool
+	ServerIdx    int
+	OnDMClick    func()
+	OnServerClick func(idx int)
+	contentH     int
 }
 
-func NewButton(cx_, cy_ int, text string, cb func(), width int) *Button95 {
-	cw := width
-	if cw == 0 {
-		cw = len(text) + 4
+func (s *Sidebar) Render(d *display.Display) {
+	h := d.Height
+	if s.contentH > 0 {
+		h = s.contentH
 	}
-	return &Button95{CX: cx_, CY: cy_, Text: text, Callback: cb, CW: cw, W: cw * cell, H: 40}
-}
+	d.FillRect(0, 0, SIDEBAR_W, h, BG_SIDEBAR)
 
-func (b *Button95) Render(d *display.Display) {
-	x := px(b.CX)
-	y := px(b.CY)
-	r := 8
-	if b.H < 20 {
-		r = 4
+	dmY := 14
+	var dmBg uint8 = BG_SIDEBAR
+	if s.SelectedDM {
+		dmBg = BG_SELECTED
 	}
-	d.FillRoundRect(x, y, b.W, b.H, r, BTNBG)
-	if b.Pressed {
-		d.FillRoundRect(x+1, y+1, b.W-2, b.H-2, r-1, ACCENT)
+	d.FillRoundRect(10, dmY, 40, 40, 20, dmBg)
+	d.FillRoundRect(12, dmY+2, 36, 36, 18, BG_DM)
+	d.DrawTextPixel(23, dmY+10, FT_ICON, "D", FG_WHITE, BG_DM)
+
+	d.FillRect(16, 60, 28, 2, 0x55)
+
+	y := 72
+	for i, name := range s.Servers {
+		if y+40 > h {
+			break
+		}
+		letter := "?"
+		if len(name) > 0 {
+			letter = strings.ToUpper(name[:1])
+		}
+		var ibg uint8 = BG_ICON
+		if !s.SelectedDM && s.ServerIdx == i {
+			d.FillRoundRect(10, y, 40, 40, 20, BG_SELECTED)
+		}
+		d.FillRoundRect(12, y+2, 36, 36, 18, ibg)
+		d.DrawTextPixel(23, y+10, FT_ICON, letter, FG_WHITE, ibg)
+		y += 48
 	}
-	tx := x + (b.W-len(b.Text)*10)/2
-	ty := y + (b.H-14)/2
-	_ = tx
-	_ = ty
-	d.DrawTextSized(b.CX+(b.CW-len(b.Text))/2, b.CY+1, FontButton, b.Text, BTNFG, BTNBG)
 }
 
-func (b *Button95) Contains(px_, py_ int) bool {
-	x := px(b.CX)
-	y := px(b.CY)
-	return px_ >= x && px_ < x+b.W && py_ >= y && py_ < y+b.H
+func (s *Sidebar) HandleTouch(x, y int) {
+	if x >= SIDEBAR_W {
+		return
+	}
+	if y >= 14 && y <= 54 {
+		if s.OnDMClick != nil {
+			s.OnDMClick()
+		}
+		return
+	}
+	serverY := 72
+	for i := range s.Servers {
+		if y >= serverY && y <= serverY+40 {
+			if s.OnServerClick != nil {
+				s.OnServerClick(i)
+			}
+			return
+		}
+		serverY += 48
+	}
 }
 
-func (b *Button95) Tap(px_, py_ int) bool {
-	if b.Contains(px_, py_) && b.Callback != nil {
+// ── Button ───────────────────────────────────────────────────────────
+
+type Button struct {
+	X, Y, W, H int
+	Text       string
+	Callback   func()
+}
+
+func NewButton(x, y int, text string, cb func()) *Button {
+	w := len(text)*8 + 24
+	return &Button{X: x, Y: y, W: w, H: 36, Text: text, Callback: cb}
+}
+
+func (b *Button) Render(d *display.Display) {
+	d.FillRoundRect(b.X, b.Y, b.W, b.H, 8, BG_BTN)
+	tx := b.X + (b.W-len(b.Text)*7)/2
+	ty := b.Y + (b.H-12)/2
+	d.DrawTextPixel(tx, ty, FT_BTN, b.Text, FG_WHITE, BG_BTN)
+}
+
+func (b *Button) Contains(x, y int) bool {
+	return x >= b.X && x < b.X+b.W && y >= b.Y && y < b.Y+b.H
+}
+
+func (b *Button) Tap(x, y int) bool {
+	if b.Contains(x, y) && b.Callback != nil {
 		b.Callback()
 		return true
 	}
 	return false
 }
 
-// Label
-type Label95 struct {
-	CX, CY int
-	Text   string
-	Width  int
-	FG, BG uint8
+// ── Label ────────────────────────────────────────────────────────────
+
+type Label struct {
+	X, Y int
+	Text string
+	Size int
+	FG   uint8
 }
 
-func NewLabel(cx_, cy_ int, text string, width int, fg, bg uint8) *Label95 {
-	return &Label95{CX: cx_, CY: cy_, Text: text, Width: width, FG: fg, BG: bg}
-}
-
-func (l *Label95) Render(d *display.Display) {
-	txt := l.Text
-	if l.Width > 0 && len(txt) > l.Width {
-		txt = trunc(txt, l.Width)
+func NewLabel(x, y int, text string, size int, fg uint8) *Label {
+	if size == 0 {
+		size = FT_LABEL
 	}
-	d.DrawTextSized(l.CX, l.CY, FontLabel, txt, l.FG, l.BG)
+	return &Label{X: x, Y: y, Text: text, Size: size, FG: fg}
 }
 
-func (l *Label95) Contains(px_, py_ int) bool { return false }
-func (l *Label95) Tap(px_, py_ int) bool      { return false }
-
-// TitleBar
-type TitleBar95 struct {
-	Title   string
-	OnClose func()
-	rect    [4]int
-	BarH    int
+func (l *Label) Render(d *display.Display) {
+	d.DrawTextPixel(l.X, l.Y, l.Size, l.Text, l.FG, BG_CONTENT)
 }
 
-func NewTitleBar(title string, onClose func()) *TitleBar95 {
-	return &TitleBar95{Title: title, OnClose: onClose, BarH: 44}
+func (l *Label) Contains(x, y int) bool { return false }
+func (l *Label) Tap(x, y int) bool      { return false }
+
+// ── ListItem ─────────────────────────────────────────────────────────
+
+type ListItem struct {
+	X, Y, W, H int
+	Text       string
+	Size       int
+	FG         uint8
+	BG         uint8
+	Callback   func()
 }
 
-func (t *TitleBar95) Render(d *display.Display) {
-	w := d.Width
-	d.FillRect(0, 0, w, t.BarH, PRIMARY)
-	d.FillRect(0, t.BarH-1, w, 1, BORDER)
-	d.DrawTextSized(2, 1, FontTitle, trunc(t.Title, d.Cols-6), CARD, PRIMARY)
-	if t.OnClose != nil {
-		closeX := d.Cols - 4
-		t.rect = [4]int{px(closeX), 6, 3*cell, t.BarH - 12}
-		d.FillRoundRect(t.rect[0], t.rect[1], t.rect[2], t.rect[3], 6, ACCENT)
-		d.DrawTextSized(closeX+1, 1, FontClose, "X", CARD, ACCENT)
+func NewListItem(x, y, w, h int, text string, fg, bg uint8, cb func()) *ListItem {
+	return &ListItem{X: x, Y: y, W: w, H: h, Text: text, Size: FT_LABEL, FG: fg, BG: bg, Callback: cb}
+}
+
+func (li *ListItem) Render(d *display.Display) {
+	if li.BG != BG_CONTENT {
+		d.FillRoundRect(li.X, li.Y, li.W, li.H, 4, li.BG)
 	}
+	d.DrawTextPixel(li.X+8, li.Y+(li.H-12)/2, li.Size, li.Text, li.FG, li.BG)
 }
 
-func (t *TitleBar95) Contains(px_, py_ int) bool {
-	x, y, w, h := t.rect[0], t.rect[1], t.rect[2], t.rect[3]
-	return px_ >= x && px_ < x+w && py_ >= y && py_ < y+h
+func (li *ListItem) Contains(x, y int) bool {
+	return x >= li.X && x < li.X+li.W && y >= li.Y && y < li.Y+li.H
 }
 
-func (t *TitleBar95) Tap(px_, py_ int) bool {
-	if t.OnClose != nil && t.Contains(px_, py_) {
-		t.OnClose()
+func (li *ListItem) Tap(x, y int) bool {
+	if li.Contains(x, y) && li.Callback != nil {
+		li.Callback()
 		return true
 	}
 	return false
 }
 
-// ModernHeader
-type ModernHeader struct {
-	Title   string
-	OnClose func()
-	rect    [4]int
-	BarH    int
+// ── ScrollBar ────────────────────────────────────────────────────────
+
+type ScrollBar struct {
+	X, Y, H, Total, Visible, Offset int
 }
 
-func NewModernHeader(title string, onClose func()) *ModernHeader {
-	return &ModernHeader{Title: title, OnClose: onClose, BarH: 44}
-}
-
-func (m *ModernHeader) Render(d *display.Display) {
-	w := d.Width
-	d.FillRect(0, 0, w, m.BarH, PRIMARY)
-	d.DrawTextSized(2, 1, FontTitle, trunc(m.Title, d.Cols-6), CARD, PRIMARY)
-	if m.OnClose != nil {
-		closeX := d.Cols - 4
-		m.rect = [4]int{px(closeX), 6, 3*cell, m.BarH - 12}
-		d.FillRoundRect(m.rect[0], m.rect[1], m.rect[2], m.rect[3], 6, ACCENT)
-		d.DrawTextSized(closeX+1, 1, FontClose, "X", CARD, ACCENT)
+func (sb *ScrollBar) Render(d *display.Display) {
+	if sb.Total <= sb.Visible {
+		return
 	}
-}
-
-func (m *ModernHeader) Contains(px_, py_ int) bool {
-	x, y, w, h := m.rect[0], m.rect[1], m.rect[2], m.rect[3]
-	return px_ >= x && px_ < x+w && py_ >= y && py_ < y+h
-}
-
-func (m *ModernHeader) Tap(px_, py_ int) bool {
-	if m.OnClose != nil && m.Contains(px_, py_) {
-		m.OnClose()
-		return true
+	d.FillRect(sb.X, sb.Y, 3, sb.H, FG_DIVIDER)
+	barH := sb.H * sb.Visible / sb.Total
+	if barH < 12 {
+		barH = 12
 	}
-	return false
+	barY := sb.Y + (sb.H-barH)*sb.Offset/(sb.Total-sb.Visible)
+	d.FillRoundRect(sb.X, barY, 3, barH, 1, FG_MUTED)
 }
 
-// Card
-type Card struct {
-	x, y, w, h, radius int
-}
+// ── App ──────────────────────────────────────────────────────────────
 
-func (c *Card) Render(d *display.Display) {
-	d.FillRoundRect(c.x, c.y, c.w, c.h, c.radius, CARD)
-	d.Rect(c.x, c.y, c.w, c.h, BORDER, 1)
-}
-
-func (c *Card) Contains(px_, py_ int) bool { return false }
-func (c *Card) Tap(px_, py_ int) bool      { return false }
-
-// Box
-type Box struct {
-	x, y, w, h, radius int
-	bg, border         uint8
-}
-
-func (b *Box) Render(d *display.Display) {
-	d.FillRoundRect(b.x, b.y, b.w, b.h, b.radius, b.border)
-	d.FillRoundRect(b.x+2, b.y+2, b.w-4, b.h-4, b.radius-2, b.bg)
-}
-
-func (b *Box) Contains(px_, py_ int) bool { return false }
-func (b *Box) Tap(px_, py_ int) bool      { return false }
-
-// rowBg
-type rowBg struct{ cy, cols int }
-
-func (r *rowBg) Render(d *display.Display) {
-	d.FillRoundRect(8, px(r.cy)+2, d.Width-16, cell-4, 6, GOVERLAY)
-}
-
-func (r *rowBg) Contains(px_, py_ int) bool { return false }
-func (r *rowBg) Tap(px_, py_ int) bool      { return false }
-
-// divider
-type divider struct{ y, w int }
-
-func (d2 *divider) Render(d *display.Display) {
-	d.FillRect(12, d2.y, d.Width-24, 1, BORDER)
-}
-
-func (d2 *divider) Contains(px_, py_ int) bool { return false }
-func (d2 *divider) Tap(px_, py_ int) bool      { return false }
-
-// scrollArrow
-type scrollArrow struct {
-	cy, cols int
-	up       bool
-}
-
-func (s *scrollArrow) Render(d *display.Display) {
-	y := px(s.cy)
-	w := d.Width
-	d.FillRoundRect(8, y+2, w-16, cell-4, 6, ACCENT)
-	label := "  \\/  "
-	if s.up {
-		label = "  /\\  "
-	}
-	d.DrawTextSized(2, s.cy, FontSmall, label, CARD, ACCENT)
-}
-
-func (s *scrollArrow) Contains(px_, py_ int) bool { return false }
-func (s *scrollArrow) Tap(px_, py_ int) bool      { return false }
-
-// App
-type App95 struct {
+type App struct {
 	Display *display.Display
 	Screens map[string]Screen
 	Current string
@@ -274,22 +240,22 @@ type App95 struct {
 }
 
 type Screen interface {
-	SetApp(a *App95)
+	SetApp(a *App)
 	Render(d *display.Display)
-	OnTouch(px, py int) bool
+	OnTouch(x, y int) bool
 	OnShow(args map[string]interface{})
 }
 
-func NewApp(d *display.Display) *App95 {
-	return &App95{Display: d, Screens: make(map[string]Screen), Running: true}
+func NewApp(d *display.Display) *App {
+	return &App{Display: d, Screens: make(map[string]Screen), Running: true}
 }
 
-func (a *App95) Add(name string, s Screen) {
+func (a *App) Add(name string, s Screen) {
 	s.SetApp(a)
 	a.Screens[name] = s
 }
 
-func (a *App95) Show(name string, args map[string]interface{}) {
+func (a *App) Show(name string, args map[string]interface{}) {
 	a.Current = name
 	scr := a.Screens[name]
 	if scr != nil {
@@ -298,60 +264,37 @@ func (a *App95) Show(name string, args map[string]interface{}) {
 	}
 }
 
-func (a *App95) Touch(px_, py_ int) {
+func (a *App) Touch(x, y int) {
 	if a.Current == "" {
 		return
 	}
 	scr := a.Screens[a.Current]
 	if scr != nil {
-		if scr.OnTouch(px_, py_) {
+		if scr.OnTouch(x, y) {
 			scr.Render(a.Display)
 		}
 	}
 }
 
-func (a *App95) Stop() { a.Running = false }
+func (a *App) Stop() { a.Running = false }
 
-// BaseScreen
-type BaseScreen struct {
-	App        *App95
-	Components []Component
-}
+// ── LoginScreen ──────────────────────────────────────────────────────
 
-func (b *BaseScreen) SetApp(a *App95) { b.App = a }
-
-func (b *BaseScreen) Render(d *display.Display) {
-	d.Clear(BG)
-	for _, c := range b.Components {
-		c.Render(d)
-	}
-	d.Refresh()
-}
-
-func (b *BaseScreen) OnShow(args map[string]interface{}) { b.Components = nil }
-
-func (b *BaseScreen) OnTouch(px_, py_ int) bool {
-	for _, c := range b.Components {
-		if c.Tap(px_, py_) {
-			return false
-		}
-	}
-	return false
-}
-
-// LoginScreen
-type LoginScreen95 struct {
-	BaseScreen
-	URL     string
+type LoginScreen struct {
+	App    *App
+	URL    string
 	SSHInfo string
-	OnQuit  func()
+	OnQuit func()
+items  []Component
 }
 
-func NewLoginScreen(url string, onQuit func()) *LoginScreen95 {
-	return &LoginScreen95{URL: url, OnQuit: onQuit}
+func NewLoginScreen(url string, onQuit func()) *LoginScreen {
+	return &LoginScreen{URL: url, OnQuit: onQuit}
 }
 
-func (s *LoginScreen95) OnShow(args map[string]interface{}) {
+func (s *LoginScreen) SetApp(a *App) { s.App = a }
+
+func (s *LoginScreen) OnShow(args map[string]interface{}) {
 	if v, ok := args["url"]; ok {
 		if u, ok := v.(string); ok {
 			s.URL = u
@@ -370,91 +313,104 @@ func (s *LoginScreen95) OnShow(args map[string]interface{}) {
 	s.build()
 }
 
-func (s *LoginScreen95) build() {
-	if s.App == nil {
-		return
-	}
+func (s *LoginScreen) build() {
 	d := s.App.Display
-	cols := d.Cols
-	s.Components = nil
+	s.items = nil
 
-	s.Components = append(s.Components, NewTitleBar("KindleCord", s.OnQuit))
+	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
+	d.DrawTextPixel(12, 12, FT_TITLE, "KindleCord", FG_WHITE, BG_HEADER)
 
-	y := 3
-
-	s.Components = append(s.Components, NewLabel(2, y, "Open on your phone:", 0, TEXTMUTED, BG))
-	y += 2
+	y := 64
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Open on your phone:", FT_SMALL, FG_MUTED))
+	y += 28
 
 	url := s.URL
 	if url == "" {
 		url = "http://0.0.0.0:8080"
 	}
-	cx_ := (cols - len(url)) / 2
-	if cx_ < 2 {
-		cx_ = 2
-	}
-	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, ACCENT, BG))
-	y += 2
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, url, FT_LABEL, BG_DM))
+	y += 28
 
 	if s.SSHInfo != "" {
-		sshCx := (cols - len(s.SSHInfo)) / 2
-		if sshCx < 2 {
-			sshCx = 2
-		}
-		s.Components = append(s.Components, NewLabel(sshCx, y, s.SSHInfo, cols-4, TEXTMUTED, BG))
-		y += 2
-	} else {
-		y += 1
+		s.items = append(s.items, NewLabel(CONTENT_X+8, y, s.SSHInfo, FT_SMALL, FG_MUTED))
+		y += 28
 	}
 
-	y += 1
+	y += 20
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Paste your Discord token", FT_LABEL, FG_BLACK))
+	y += 24
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "to log in.", FT_LABEL, FG_BLACK))
+	y += 28
+	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Waiting for token...", FT_SMALL, FG_MUTED))
 
-	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, TEXT, BG))
-	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, TEXT, BG))
-	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "Waiting for token...", 0, TEXTMUTED, BG))
-
-	btnY := d.Rows - 3
-	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "  Exit  ", s.OnQuit, 8))
+	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
+	s.items = append(s.items, NewButton(btnX, d.Height-60, "Exit", s.OnQuit))
 }
 
-func (s *LoginScreen95) Render(d *display.Display) { s.BaseScreen.Render(d) }
+func (s *LoginScreen) Render(d *display.Display) {
+	d.Clear(BG_CONTENT)
+	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
+	d.DrawTextPixel(12, 12, FT_TITLE, "KindleCord", FG_WHITE, BG_HEADER)
+	for _, c := range s.items {
+		c.Render(d)
+	}
+	d.Refresh()
+}
 
-func (s *LoginScreen95) OnTouch(px_, py_ int) bool {
-	for _, c := range s.Components {
-		c.Tap(px_, py_)
+func (s *LoginScreen) OnTouch(x, y int) bool {
+	if y < HEADER_H {
+		return false
+	}
+	for _, c := range s.items {
+		if c.Tap(x, y) {
+			return false
+		}
 	}
 	return false
 }
 
-// ListScreen
-type ListScreen95 struct {
-	BaseScreen
-	Title         string
-	Items         []string
-	OnSelect      func(idx int)
-	OnBack        func()
-	BackLabel     string
-	ShowTitle     bool
-	scroll        int
-	scrollHasUp   bool
-	scrollHasDown bool
-	scrollVisible int
-	scrollRowStart int
+// ── HomeScreen (sidebar + DM/channel list) ───────────────────────────
+
+type HomeScreen struct {
+	App        *App
+	Sidebar    Sidebar
+	Title      string
+	Items      []*ListItem
+	OnBack     func()
+	scroll     int
+	TotalItems int
 }
 
-func NewListScreen(title string, items []string, onSelect func(int), onBack func(), backLabel string, showTitle bool) *ListScreen95 {
-	if backLabel == "" {
-		backLabel = "Back"
-	}
-	return &ListScreen95{Title: title, Items: items, OnSelect: onSelect, OnBack: onBack, BackLabel: backLabel, ShowTitle: showTitle}
+func NewHomeScreen() *HomeScreen {
+	return &HomeScreen{}
 }
 
-func (s *ListScreen95) OnShow(args map[string]interface{}) {
-	if v, ok := args["items"]; ok {
+func (s *HomeScreen) SetApp(a *App) { s.App = a }
+
+func (s *HomeScreen) OnShow(args map[string]interface{}) {
+	if v, ok := args["servers"]; ok {
 		if vv, ok := v.([]string); ok {
-			s.Items = vv
+			s.Sidebar.Servers = vv
+		}
+	}
+	if v, ok := args["selected_dm"]; ok {
+		if vv, ok := v.(bool); ok {
+			s.Sidebar.SelectedDM = vv
+		}
+	}
+	if v, ok := args["server_idx"]; ok {
+		if vv, ok := v.(int); ok {
+			s.Sidebar.ServerIdx = vv
+		}
+	}
+	if v, ok := args["on_dm_click"]; ok {
+		if f, ok := v.(func()); ok {
+			s.Sidebar.OnDMClick = f
+		}
+	}
+	if v, ok := args["on_server_click"]; ok {
+		if f, ok := v.(func(int)); ok {
+			s.Sidebar.OnServerClick = f
 		}
 	}
 	if v, ok := args["title"]; ok {
@@ -462,293 +418,368 @@ func (s *ListScreen95) OnShow(args map[string]interface{}) {
 			s.Title = vv
 		}
 	}
-	if v, ok := args["on_select"]; ok {
-		if vv, ok := v.(func(int)); ok {
-			s.OnSelect = vv
+	if v, ok := args["items"]; ok {
+		if vv, ok := v.([]string); ok {
+			s.Items = nil
+			for _, item := range vv {
+				item := item
+				s.Items = append(s.Items, NewListItem(0, 0, 0, 0, item, FG_BLACK, BG_CONTENT, nil))
+			}
 		}
 	}
-	if v, ok := args["on_back"]; ok {
-		if vv, ok := v.(func()); ok {
-			s.OnBack = vv
+	if v, ok := args["on_select"]; ok {
+		if f, ok := v.(func(int)); ok {
+			for i := range s.Items {
+				idx := i
+				s.Items[i].Callback = func() { f(idx) }
+			}
 		}
 	}
 	s.scroll = 0
-	s.build()
+	s.TotalItems = len(s.Items)
 }
 
-func (s *ListScreen95) build() {
-	if s.App == nil {
-		return
-	}
-	d := s.App.Display
-	cols := d.Cols
-	s.Components = nil
-	row := 0
-	if s.ShowTitle {
-		s.Components = append(s.Components, NewModernHeader(s.Title, s.OnBack))
-		row = 2
-		s.Components = append(s.Components, &Card{x: 4, y: px(row) - 2, w: d.Width - 8, h: (d.Rows - row - 3) * cell, radius: 8})
+func (s *HomeScreen) Render(d *display.Display) {
+	d.Clear(BG_CONTENT)
+
+	s.Sidebar.contentH = d.Height
+	s.Sidebar.Render(d)
+
+	d.FillRect(SIDEBAR_W, 0, d.Width-SIDEBAR_W, HEADER_H, BG_HEADER)
+	d.DrawTextPixel(SIDEBAR_W+12, 12, FT_TITLE, s.Title, FG_WHITE, BG_HEADER)
+
+	contentW := d.Width - CONTENT_X - 6
+	startY := HEADER_H + 8
+	itemH := 40
+	visible := (d.Height - HEADER_H - 56) / itemH
+	if visible < 1 {
+		visible = 1
 	}
 
-	total := len(s.Items)
-	visibleRows := d.Rows - row - 4
-	if visibleRows < 0 {
-		visibleRows = 0
+	if s.scroll > 0 {
+		upY := startY
+		d.FillRoundRect(CONTENT_X, upY, contentW, 32, 6, BG_CARD)
+		d.DrawTextPixel(CONTENT_X+contentW/2-8, upY+8, FT_SMALL, "  ^  ", FG_MUTED, BG_CARD)
+		startY += 36
+		visible--
 	}
-	hasUp := s.scroll > 0
-	hasDown := false
 
-	if hasUp {
-		visibleRows--
+	maxScroll := s.TotalItems - visible
+	if maxScroll < 0 {
+		maxScroll = 0
 	}
-	if s.scroll+visibleRows < total {
-		hasDown = true
-		visibleRows--
-		if visibleRows < 0 {
-			visibleRows = 0
+
+	endIdx := s.scroll + visible
+	if endIdx > s.TotalItems {
+		endIdx = s.TotalItems
+	}
+
+	y := startY
+	for i := s.scroll; i < endIdx; i++ {
+		s.Items[i].X = CONTENT_X
+		s.Items[i].Y = y
+		s.Items[i].W = contentW
+		s.Items[i].H = itemH
+		s.Items[i].Render(d)
+		y += itemH
+	}
+
+	if s.TotalItems > visible {
+		sb := &ScrollBar{
+			X: CONTENT_X + contentW - 6,
+			Y: startY,
+			H: visible * itemH,
+			Total: s.TotalItems,
+			Visible: visible,
+			Offset: s.scroll,
 		}
+		sb.Render(d)
 	}
 
-	if hasUp {
-		s.Components = append(s.Components, &scrollArrow{cy: row, cols: cols, up: true})
-		row++
+	if s.TotalItems > visible && endIdx < s.TotalItems {
+		downY := d.Height - 52
+		d.FillRoundRect(CONTENT_X, downY, contentW, 32, 6, BG_CARD)
+		d.DrawTextPixel(CONTENT_X+contentW/2-8, downY+8, FT_SMALL, "  v  ", FG_MUTED, BG_CARD)
 	}
 
-	visEnd := s.scroll + visibleRows
-	if visEnd > total {
-		visEnd = total
-	}
-	for i := s.scroll; i < visEnd; i++ {
-		vi := i - s.scroll
-		if vi%2 == 0 {
-			s.Components = append(s.Components, &rowBg{cy: row + vi, cols: cols})
-		}
-		txt := "  " + s.Items[i]
-		s.Components = append(s.Components, NewLabel(2, row+vi, txt, cols-4, TEXT, CARD))
-	}
-
-	if hasDown {
-		s.Components = append(s.Components, &scrollArrow{cy: row + visibleRows, cols: cols, up: false})
-	}
-
-	if s.OnBack != nil {
-		s.Components = append(s.Components, NewButton(2, d.Rows-3, s.BackLabel, s.OnBack, len(s.BackLabel)+4))
-	}
-
-	s.scrollHasUp = hasUp
-	s.scrollHasDown = hasDown
-	s.scrollVisible = visibleRows
-	s.scrollRowStart = row - boolToInt(hasUp)
-	if s.ShowTitle {
-		s.scrollRowStart = 2
-	}
+	d.Refresh()
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func (s *ListScreen95) OnTouch(px_, py_ int) bool {
-	d := s.App.Display
-	total := len(s.Items)
-	row := py_ / cell
-
-	if row >= d.Rows-3 && s.OnBack != nil {
-		s.OnBack()
-		return false
-	}
-
-	if s.ShowTitle && row < 2 {
-		for _, c := range s.Components {
-			if c.Tap(px_, py_) {
-				return false
-			}
-		}
-		return false
-	}
-
-	startRow := 2
-	if !s.ShowTitle {
-		startRow = 0
-	}
-
-	if s.scroll > 0 && row == startRow {
-		s.scroll--
-		s.build()
+func (s *HomeScreen) OnTouch(x, y int) bool {
+	if x < SIDEBAR_W {
+		s.Sidebar.HandleTouch(x, y)
 		return true
 	}
 
-	if s.scroll+s.scrollVisible < total {
-		last := d.Rows - 4
-		if row == last {
+	if y < HEADER_H {
+		return false
+	}
+
+	d := s.App.Display
+	itemH := 40
+	startY := HEADER_H + 8
+	visible := (d.Height - HEADER_H - 56) / itemH
+	if visible < 1 {
+		visible = 1
+	}
+
+	if s.scroll > 0 && y >= startY && y < startY+32 {
+		s.scroll--
+		return true
+	}
+
+	if s.TotalItems > visible {
+		downY := d.Height - 52
+		if y >= downY && y < downY+32 {
 			s.scroll++
-			s.build()
+			maxScroll := s.TotalItems - visible
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if s.scroll > maxScroll {
+				s.scroll = maxScroll
+			}
 			return true
 		}
 	}
 
-	if row >= startRow && row < d.Rows-3 {
-		effectiveStart := startRow
-		if s.scrollHasUp {
-			effectiveStart++
-		}
-		if row < effectiveStart {
-			return false
-		}
-		idx := s.scroll + (row - effectiveStart)
-		if idx >= 0 && idx < total && s.OnSelect != nil {
-			s.OnSelect(idx)
-			return false
-		}
+	if s.scroll > 0 {
+		startY += 36
 	}
+
+	clickedIdx := -1
+	itemY := startY
+	for i := s.scroll; i < s.TotalItems && i < s.scroll+visible; i++ {
+		if y >= itemY && y < itemY+itemH {
+			clickedIdx = i
+			break
+		}
+		itemY += itemH
+	}
+
+	if clickedIdx >= 0 && clickedIdx < len(s.Items) && s.Items[clickedIdx].Callback != nil {
+		s.Items[clickedIdx].Callback()
+		return false
+	}
+
 	return false
 }
 
-// MessageScreen
-type MessageScreen95 struct {
-	BaseScreen
+// ── MessageScreen (sidebar + messages) ───────────────────────────────
+
+type MessageScreen struct {
+	App      *App
+	Sidebar  Sidebar
 	Title    string
 	Messages []map[string]interface{}
 	OnBack   func()
 	scroll   int
-	hasUp    bool
-	hasDown  bool
-	visible  int
 }
 
-func NewMessageScreen(title string, msgs []map[string]interface{}, onBack func()) *MessageScreen95 {
-	return &MessageScreen95{Title: title, Messages: msgs, OnBack: onBack}
+func NewMessageScreen() *MessageScreen {
+	return &MessageScreen{}
 }
 
-func (s *MessageScreen95) OnShow(args map[string]interface{}) {
+func (s *MessageScreen) SetApp(a *App) { s.App = a }
+
+func (s *MessageScreen) OnShow(args map[string]interface{}) {
+	if v, ok := args["servers"]; ok {
+		if vv, ok := v.([]string); ok {
+			s.Sidebar.Servers = vv
+		}
+	}
+	if v, ok := args["selected_dm"]; ok {
+		if vv, ok := v.(bool); ok {
+			s.Sidebar.SelectedDM = vv
+		}
+	}
+	if v, ok := args["server_idx"]; ok {
+		if vv, ok := v.(int); ok {
+			s.Sidebar.ServerIdx = vv
+		}
+	}
+	if v, ok := args["on_dm_click"]; ok {
+		if f, ok := v.(func()); ok {
+			s.Sidebar.OnDMClick = f
+		}
+	}
+	if v, ok := args["on_server_click"]; ok {
+		if f, ok := v.(func(int)); ok {
+			s.Sidebar.OnServerClick = f
+		}
+	}
+	if v, ok := args["title"]; ok {
+		if vv, ok := v.(string); ok {
+			s.Title = vv
+		}
+	}
 	if v, ok := args["messages"]; ok {
 		if vv, ok := v.([]map[string]interface{}); ok {
 			s.Messages = vv
 		}
 	}
-	if v, ok := args["title"]; ok {
-		if vv, ok := v.(string); ok {
-			s.Title = vv
-		}
-	}
 	if v, ok := args["on_back"]; ok {
-		if vv, ok := v.(func()); ok {
-			s.OnBack = vv
+		if f, ok := v.(func()); ok {
+			s.OnBack = f
 		}
 	}
 	s.scroll = 0
-	s.build()
 }
 
-func (s *MessageScreen95) build() {
-	if s.App == nil {
-		return
-	}
-	d := s.App.Display
-	cols := d.Cols
-	t := strings.TrimPrefix(s.Title, "#")
-	total := len(s.Messages)
-	baseVisible := (d.Rows - 5) / 2
-	if baseVisible < 0 {
-		baseVisible = 0
-	}
-	hasUp := s.scroll > 0
-	hasDown := false
-	vis := baseVisible
-	if hasUp {
-		vis--
-	}
-	if s.scroll+vis < total {
-		hasDown = true
-		vis--
-	}
-	if vis < 0 {
-		vis = 0
-	}
-	s.hasUp = hasUp
-	s.hasDown = hasDown
-	s.visible = vis
+func (s *MessageScreen) Render(d *display.Display) {
+	d.Clear(BG_CONTENT)
 
-	s.Components = nil
-	s.Components = append(s.Components, NewTitleBar("#"+t, s.OnBack))
-	row := 2
-	if hasUp {
-		s.Components = append(s.Components, &scrollArrow{cy: row, cols: cols, up: true})
-		row++
+	s.Sidebar.contentH = d.Height
+	s.Sidebar.Render(d)
+
+	d.FillRect(SIDEBAR_W, 0, d.Width-SIDEBAR_W, HEADER_H, BG_HEADER)
+	titleText := "#" + strings.TrimPrefix(s.Title, "#")
+	d.DrawTextPixel(SIDEBAR_W+12, 12, FT_TITLE, titleText, FG_WHITE, BG_HEADER)
+
+	contentX := CONTENT_X
+	contentW := d.Width - contentX - 6
+	startY := HEADER_H + 8
+	lineH := 34
+
+	type msgView struct {
+		author string
+		content string
+		isHeader bool
 	}
-	visEnd := s.scroll + vis
-	if visEnd > total {
-		visEnd = total
-	}
-	for i := s.scroll; i < visEnd; i++ {
-		msg := s.Messages[i]
-		author := "?"
+	var views []msgView
+	for _, msg := range s.Messages {
+		author := ""
 		if a, ok := msg["author"].(map[string]interface{}); ok {
 			if u, ok := a["username"].(string); ok {
 				author = u
 			}
 		}
 		content, _ := msg["content"].(string)
-		s.Components = append(s.Components, NewLabel(2, row, author, 0, PRIMARY, CARD))
-		s.Components = append(s.Components, NewLabel(2, row+1, "  "+trunc(content, cols-5), 0, TEXT, CARD))
-		if i < visEnd-1 {
-			s.Components = append(s.Components, &divider{y: px(row+2) - 10, w: cols * cell})
+		content = strings.ReplaceAll(content, "\n", " ")
+		views = append(views, msgView{author: author, content: content, isHeader: true})
+	}
+
+	totalLines := len(views)
+	if totalLines == 0 {
+		d.DrawTextPixel(contentX+12, startY+20, FT_LABEL, "No messages", FG_MUTED, BG_CONTENT)
+		d.Refresh()
+		return
+	}
+
+	visible := (d.Height - HEADER_H - 56) / lineH
+	if visible < 1 {
+		visible = 1
+	}
+
+	if s.scroll > 0 {
+		d.FillRoundRect(contentX, startY, contentW, 32, 6, BG_CARD)
+		d.DrawTextPixel(contentX+contentW/2-8, startY+8, FT_SMALL, "  ^  ", FG_MUTED, BG_CARD)
+		startY += 36
+		visible--
+	}
+
+	maxScroll := totalLines - visible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if s.scroll > maxScroll {
+		s.scroll = maxScroll
+	}
+
+	endIdx := s.scroll + visible
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+
+	y := startY
+	for i := s.scroll; i < endIdx; i++ {
+		v := views[i]
+		d.DrawTextPixel(contentX+8, y+2, FT_MSG, v.author, BG_DM, BG_CONTENT)
+		if len(v.content) > 0 {
+			maxChars := contentW / 6
+			txt := v.content
+			if len(txt) > maxChars {
+				txt = txt[:maxChars-1] + "~"
+			}
+			d.DrawTextPixel(contentX+8, y+18, FT_SMALL, txt, FG_BLACK, BG_CONTENT)
 		}
-		row += 2
+		y += lineH
+		if i < endIdx-1 {
+			d.FillRect(contentX+8, y-4, contentW-16, 1, FG_DIVIDER)
+		}
 	}
-	if hasDown {
-		s.Components = append(s.Components, &scrollArrow{cy: row, cols: cols, up: false})
+
+	if totalLines > visible && endIdx < totalLines {
+		downY := d.Height - 52
+		d.FillRoundRect(contentX, downY, contentW, 32, 6, BG_CARD)
+		d.DrawTextPixel(contentX+contentW/2-8, downY+8, FT_SMALL, "  v  ", FG_MUTED, BG_CARD)
 	}
-	s.Components = append(s.Components, NewButton(2, d.Rows-3, "  OK  ", s.OnBack, 6))
+
+	d.Refresh()
 }
 
-func (s *MessageScreen95) OnTouch(px_, py_ int) bool {
-	d := s.App.Display
-	row := py_ / cell
-	if row >= d.Rows-3 && s.OnBack != nil {
-		s.OnBack()
-		return false
+func (s *MessageScreen) OnTouch(x, y int) bool {
+	if x < SIDEBAR_W {
+		s.Sidebar.HandleTouch(x, y)
+		return true
 	}
-	if row < 2 {
-		for _, c := range s.Components {
-			if c.Tap(px_, py_) {
-				return false
-			}
+
+	if y < HEADER_H {
+		if s.OnBack != nil {
+			s.OnBack()
 		}
 		return false
 	}
-	if s.hasUp && row == 2 {
+
+	d := s.App.Display
+	lineH := 34
+	startY := HEADER_H + 8
+	totalLines := len(s.Messages)
+	visible := (d.Height - HEADER_H - 56) / lineH
+	if visible < 1 {
+		visible = 1
+	}
+
+	if s.scroll > 0 && y >= startY && y < startY+32 {
 		s.scroll--
-		s.build()
 		return true
 	}
-	if s.hasDown {
-		last := d.Rows - 4
-		if row == last {
+
+	if totalLines > visible {
+		downY := d.Height - 52
+		if y >= downY && y < downY+32 {
 			s.scroll++
-			s.build()
+			maxScroll := totalLines - visible
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if s.scroll > maxScroll {
+				s.scroll = maxScroll
+			}
 			return true
 		}
 	}
+
 	return false
 }
 
-// Dialog
-type Dialog95 struct {
-	BaseScreen
+// ── Dialog ───────────────────────────────────────────────────────────
+
+type Dialog struct {
+	App     *App
 	Title   string
 	Message string
 	OnOK    func()
+	items   []Component
 }
 
-func NewDialog(title, message string, onOK func()) *Dialog95 {
-	return &Dialog95{Title: title, Message: message, OnOK: onOK}
+func NewDialog(title, message string, onOK func()) *Dialog {
+	return &Dialog{Title: title, Message: message, OnOK: onOK}
 }
 
-func (d2 *Dialog95) OnShow(args map[string]interface{}) {
+func (d2 *Dialog) SetApp(a *App) { d2.App = a }
+
+func (d2 *Dialog) OnShow(args map[string]interface{}) {
 	if v, ok := args["title"]; ok {
 		if vv, ok := v.(string); ok {
 			d2.Title = vv
@@ -767,24 +798,111 @@ func (d2 *Dialog95) OnShow(args map[string]interface{}) {
 	d2.build()
 }
 
-func (d2 *Dialog95) build() {
-	if d2.App == nil {
-		return
-	}
+func (d2 *Dialog) build() {
 	d := d2.App.Display
-	cols := d.Cols
-	d2.Components = nil
-	d2.Components = append(d2.Components, NewTitleBar(d2.Title, d2.OnOK))
-	lines := strings.Split(d2.Message, "\n")
-	y := 4
-	for _, line := range lines {
-		cx_ := (cols - len(line)) / 2
-		if cx_ < 2 {
-			cx_ = 2
-		}
-		d2.Components = append(d2.Components, NewLabel(cx_, y, line, 0, TEXT, BG))
-		y += 2
+	d2.items = nil
+
+	d2.items = append(d2.items, NewLabel(CONTENT_X+12, 64, d2.Message, FT_LABEL, FG_BLACK))
+
+	btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
+	d2.items = append(d2.items, NewButton(btnX, 120, "OK", d2.OnOK))
+}
+
+func (d2 *Dialog) Render(d *display.Display) {
+	d.Clear(BG_CONTENT)
+	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
+	titleText := d2.Title
+	if len(titleText) > 30 {
+		titleText = titleText[:29] + "~"
 	}
-	btnY := y + 1
-	d2.Components = append(d2.Components, NewButton((cols-6)/2, btnY, "  OK  ", d2.OnOK, 6))
+	d.DrawTextPixel(12, 12, FT_TITLE, titleText, FG_WHITE, BG_HEADER)
+	for _, c := range d2.items {
+		c.Render(d)
+	}
+	d.Refresh()
+}
+
+func (d2 *Dialog) OnTouch(x, y int) bool {
+	for _, c := range d2.items {
+		if c.Tap(x, y) {
+			return false
+		}
+	}
+	return false
+}
+
+// ── ErrorScreen ──────────────────────────────────────────────────────
+
+type ErrorScreen struct {
+	App    *App
+	Title  string
+	Lines  []string
+	OnQuit func()
+	items  []Component
+}
+
+func NewErrorScreen(title string, lines []string, onQuit func()) *ErrorScreen {
+	return &ErrorScreen{Title: title, Lines: lines, OnQuit: onQuit}
+}
+
+func (s *ErrorScreen) SetApp(a *App) { s.App = a }
+
+func (s *ErrorScreen) OnShow(args map[string]interface{}) {
+	if v, ok := args["title"]; ok {
+		if vv, ok := v.(string); ok {
+			s.Title = vv
+		}
+	}
+	if v, ok := args["lines"]; ok {
+		if vv, ok := v.([]string); ok {
+			s.Lines = vv
+		}
+	}
+	if v, ok := args["on_quit"]; ok {
+		if f, ok := v.(func()); ok {
+			s.OnQuit = f
+		}
+	}
+	s.build()
+}
+
+func (s *ErrorScreen) build() {
+	d := s.App.Display
+	s.items = nil
+
+	y := 64
+	for _, line := range s.Lines {
+		if line == "" {
+			y += 16
+			continue
+		}
+		s.items = append(s.items, NewLabel(CONTENT_X+12, y, line, FT_SMALL, FG_BLACK))
+		y += 22
+	}
+
+	btnX := CONTENT_X + (d.Width-CONTENT_X-80)/2
+	s.items = append(s.items, NewButton(btnX, d.Height-60, "Exit", s.OnQuit))
+}
+
+func (s *ErrorScreen) Render(d *display.Display) {
+	d.Clear(BG_CONTENT)
+	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
+	titleText := s.Title
+	if len(titleText) > 30 {
+		titleText = titleText[:29] + "~"
+	}
+	d.DrawTextPixel(12, 12, FT_TITLE, titleText, FG_WHITE, BG_HEADER)
+	for _, c := range s.items {
+		c.Render(d)
+	}
+	d.Refresh()
+}
+
+func (s *ErrorScreen) OnTouch(x, y int) bool {
+	for _, c := range s.items {
+		if c.Tap(x, y) {
+			return false
+		}
+	}
+	return false
 }

@@ -295,41 +295,35 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	d.DrawTextSized(cx, cy, 16, text, fg, bg)
 }
 
-// DrawTextSized draws text at cell coordinates with a given font size (px).
+// DrawTextSized draws text at cell coordinates with a given font size.
 func (d *Display) DrawTextSized(cx, cy, size int, text string, fg, bg uint8) {
 	if cx >= d.Cols || cy >= d.Rows || text == "" {
 		return
 	}
-	maxChars := d.Cols - cx
-	if maxChars <= 0 {
+	px := cx * CellSize
+	py := cy * CellSize
+	d.DrawTextPixel(px, py, size, text, fg, bg)
+}
+
+// DrawTextPixel draws text at exact pixel coordinates with a given font size.
+func (d *Display) DrawTextPixel(x, y, size int, text string, fg, bg uint8) {
+	if text == "" || x >= d.Width || y >= d.Height {
 		return
 	}
-	if len(text) > maxChars {
-		text = text[:maxChars]
-	}
 	if d.useFbink {
-		px := cx * CellSize
-		py := cy * CellSize
-		// Anti-aliased TrueType via fbink's OpenType support.
-		// Position via the text viewport (left/top), which is the only
-		// reliable way to place OT text; -x/-y are ignored by OT rendering.
 		font := d.font
 		if font == "" {
 			font = findFont()
 		}
-		opts := "regular=" + font + ",size=" + strconv.Itoa(size) +
-			",format,left=" + fmt.Sprintf("%d", px) + ",top=" + fmt.Sprintf("%d", py)
+		opts := fmt.Sprintf("regular=%s,size=%d,left=%d,top=%d", font, size, x, y)
 		args := []string{"-q", "-b", "-t", opts,
 			"-C", grayName(fg), "-B", grayName(bg)}
 		_ = d.runFB(append(args, text)...)
 		return
 	}
-	px := cx * CellSize
-	py := cy * CellSize
 	for i, ch := range text {
-		bx := px + i*CellSize
-		by := py
-		d.drawChar(bx, by, byte(ch), fg, bg)
+		bx := x + i*8
+		d.drawChar(bx, y, byte(ch), fg, bg)
 	}
 }
 

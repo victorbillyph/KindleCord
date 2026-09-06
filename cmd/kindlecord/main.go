@@ -13,8 +13,8 @@ import (
 	"kindlecord/internal/discord"
 	"kindlecord/internal/display"
 	"kindlecord/internal/input"
-	"kindlecord/internal/sshserver"
 	"kindlecord/internal/server"
+	"kindlecord/internal/sshserver"
 	"kindlecord/internal/ui"
 )
 
@@ -33,20 +33,17 @@ func init() {
 		projectRoot = "."
 	} else {
 		projectRoot = filepath.Dir(filepath.Dir(exe))
-		// when running via go run, exe is in /tmp/go-build, fallback to cwd
 		if strings.Contains(exe, "go-build") {
 			if cwd, err := os.Getwd(); err == nil {
 				projectRoot = cwd
 			}
 		}
 	}
-	// Also try cwd as project root if data dir exists there
 	if cwd, err := os.Getwd(); err == nil {
 		if _, err := os.Stat(filepath.Join(cwd, "data")); err == nil {
 			projectRoot = cwd
 		}
 	}
-	// Kindle path
 	if _, err := os.Stat("/mnt/us/extensions/KindleCord"); err == nil {
 		projectRoot = "/mnt/us/extensions/KindleCord"
 	}
@@ -72,7 +69,6 @@ func loadConfig() Config {
 			cfg.DiscordAPIBase = "discord.com"
 		}
 	}
-	// also try config.example
 	if cfg.DiscordAPIBase == "" {
 		cfg.DiscordAPIBase = discord.DefaultBase
 	}
@@ -95,10 +91,38 @@ func ensureDir(path string) {
 	_ = os.MkdirAll(path, 0755)
 }
 
+func serverName(g map[string]interface{}) string {
+	if n, ok := g["name"].(string); ok {
+		return n
+	}
+	return "?"
+}
+
+func channelName(c map[string]interface{}) string {
+	if n, ok := c["name"].(string); ok {
+		return "#" + n
+	}
+	return "#?"
+}
+
+func dmDisplayName(ch map[string]interface{}) string {
+	if n, ok := ch["name"].(string); ok && n != "" {
+		return n
+	}
+	if recipients, ok := ch["recipients"].([]interface{}); ok && len(recipients) > 0 {
+		if r, ok := recipients[0].(map[string]interface{}); ok {
+			if u, ok := r["username"].(string); ok {
+				return u
+			}
+		}
+	}
+	return "DM"
+}
+
 func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	cfg := loadConfig()
-	// Start debug SSH server (for testing)
+
 	go func() {
 		ln, err := sshserver.Start(2222)
 		if err != nil {
@@ -115,7 +139,6 @@ func main() {
 	defer reader.Close()
 	defer power.Close()
 
-	// Check existing token
 	var token string
 	if data, err := os.ReadFile(tokenFile); err == nil {
 		token = strings.TrimSpace(strings.Trim(string(data), `"' `))
@@ -146,13 +169,11 @@ func main() {
 		app.Add("login", loginScreen)
 		app.Show("login", map[string]interface{}{"url": url, "ssh_info": sshInfo, "on_quit": func() { quitApp = true }})
 
-		// Power watcher goroutine
 		powerCh := make(chan bool, 1)
 		go func() {
 			for {
 				power.Poll()
 				if power.IsDouble() {
-					log.Printf("[MAIN] power double -> exit login")
 					select {
 					case powerCh <- true:
 					default:
@@ -163,7 +184,6 @@ func main() {
 			}
 		}()
 
-		// Wait for token or quit
 	outerLogin:
 		for {
 			select {
@@ -183,9 +203,6 @@ func main() {
 				log.Printf("[INPUT] login touch %d,%d", ev.X, ev.Y)
 				app.Touch(ev.X, ev.Y)
 			}
-			if quitApp {
-				break outerLogin
-			}
 		}
 
 		if quitApp && token == "" {
@@ -200,35 +217,29 @@ func main() {
 		log.Printf("[MAIN] token saved len=%d", len(token))
 	}
 
-	// Discord login
 	client := discord.NewClient(token, cfg.DiscordAPIBase)
 	_, err := client.Login()
 	if err != nil {
 		log.Printf("[MAIN] login fail: %v", err)
-		// show error screen
 		title := "Invalid token"
 		if !strings.Contains(err.Error(), "401") {
 			title = "Error"
 		}
 		lines := strings.Split(err.Error(), "\n")
-		if len(lines) > 3 {
-			lines = lines[:3]
+		if len(lines) > 5 {
+			lines = lines[:5]
 		}
-		items := append(lines, "", "Invalid token was removed.", "Tap Exit and try again.")
-		if title == "Error" {
-			items = []string{err.Error(), "", "Press power 2x to exit"}
-		}
+		lines = append(lines, "", "Token was removed.", "Tap Exit and try again.")
 		disp.Clear(0xFF)
 		disp.Refresh()
 		errApp := ui.NewApp(disp)
 		done := false
-		errScreen := ui.NewListScreen(title, items, nil, func() {
+		errScreen := ui.NewErrorScreen(title, lines, func() {
 			_ = os.Remove(tokenFile)
 			done = true
-		}, "Exit", true)
+		})
 		errApp.Add("error", errScreen)
 		errApp.Show("error", nil)
-		// power goroutine for error screen
 		powerErrCh := make(chan bool, 1)
 		go func() {
 			for {
@@ -247,16 +258,11 @@ func main() {
 			select {
 			case <-powerErrCh:
 				done = true
-				break
 			default:
 			}
 			ev := reader.Poll(50 * time.Millisecond)
 			if ev != nil && ev.Press {
-				log.Printf("[INPUT] error touch %d,%d", ev.X, ev.Y)
 				errApp.Touch(ev.X, ev.Y)
-			}
-			if done {
-				break
 			}
 		}
 		disp.Clear(0xFF)
@@ -264,50 +270,101 @@ func main() {
 		return
 	}
 
-	// Main app
+	type state struct {
+		guilds    []map[string]interface{}
+		dms       []map[string]interface{}
+		channels  map[string][]map[string]interface{}
+		selDM     bool
+		selServer int
+	}
+
 	app := ui.NewApp(disp)
-	type guildCache struct {
-		guilds   []map[string]interface{}
-		channels map[string][]map[string]interface{}
+	st := &state{channels: make(map[string][]map[string]interface{})}
+
+	homeScreen := ui.NewHomeScreen()
+	app.Add("home", homeScreen)
+
+	msgScreen := ui.NewMessageScreen()
+	app.Add("messages", msgScreen)
+
+	var showDMs func()
+	var showChannels func(int)
+
+	var sidebarArgs func() map[string]interface{}
+	sidebarArgs = func() map[string]interface{} {
+		serverNames := make([]string, len(st.guilds))
+		for i, g := range st.guilds {
+			serverNames[i] = serverName(g)
+		}
+		return map[string]interface{}{
+			"servers":    serverNames,
+			"selected_dm": st.selDM,
+			"server_idx":  st.selServer,
+			"on_dm_click": func() {
+				st.selDM = true
+				showDMs()
+			},
+			"on_server_click": func(idx int) {
+				st.selDM = false
+				st.selServer = idx
+				showChannels(idx)
+			},
+		}
 	}
-	cache := &guildCache{channels: make(map[string][]map[string]interface{})}
 
-	var showGuilds func()
-	var showChannels func(guildIdx int)
-
-	showGuilds = func() {
-		guilds, err := client.GetGuilds()
+	showDMs = func() {
+		dms, err := client.GetDMs()
 		if err != nil {
-			log.Printf("[MAIN] get guilds fail: %v", err)
-			guilds = nil
+			log.Printf("[MAIN] get DMs fail: %v", err)
+			dms = nil
 		}
-		cache.guilds = guilds
-		names := make([]string, len(guilds))
-		for i, g := range guilds {
-			if n, ok := g["name"].(string); ok {
-				names[i] = n
-			} else {
-				names[i] = "?"
+		st.dms = dms
+		items := make([]string, len(dms))
+		for i, ch := range dms {
+			items[i] = dmDisplayName(ch)
+		}
+		if len(items) == 0 {
+			items = []string{"(no conversations)"}
+		}
+		args := sidebarArgs()
+		args["title"] = "Direct Messages"
+		args["items"] = items
+		args["on_select"] = func(idx int) {
+			if idx >= len(st.dms) {
+				return
 			}
+			dmID, _ := st.dms[idx]["id"].(string)
+			dmName := dmDisplayName(st.dms[idx])
+			msgs, err := client.GetMessages(dmID, 50, "")
+			if err != nil {
+				log.Printf("[MAIN] get DM messages fail: %v", err)
+				return
+			}
+			for l, r := 0, len(msgs)-1; l < r; l, r = l+1, r-1 {
+				msgs[l], msgs[r] = msgs[r], msgs[l]
+			}
+			msgArgs := sidebarArgs()
+			msgArgs["title"] = dmName
+			msgArgs["messages"] = msgs
+			msgArgs["on_back"] = func() { showDMs() }
+			app.Show("messages", msgArgs)
 		}
-		if len(names) == 0 {
-			names = []string{"(no servers)"}
-		}
-		app.Show("guilds", map[string]interface{}{"items": names, "title": "KindleCord"})
+		app.Show("home", args)
 	}
 
-	showChannels = func(idx int) {
-		if idx >= len(cache.guilds) {
+	showChannels = func(guildIdx int) {
+		if guildIdx >= len(st.guilds) {
 			return
 		}
-		gid, _ := cache.guilds[idx]["id"].(string)
-		gname, _ := cache.guilds[idx]["name"].(string)
+		gid, _ := st.guilds[guildIdx]["id"].(string)
+		gname := serverName(st.guilds[guildIdx])
 		channels, err := client.GetChannels(gid)
 		if err != nil {
 			log.Printf("[MAIN] get channels fail: %v", err)
 			channels = nil
 		}
-		cache.channels[gid] = channels
+		st.channels[gid] = channels
+
 		var textChannels []map[string]interface{}
 		for _, c := range channels {
 			if t, ok := c["type"].(float64); ok && t == 0 {
@@ -316,67 +373,56 @@ func main() {
 				textChannels = append(textChannels, c)
 			}
 		}
+
 		items := make([]string, len(textChannels))
-		chData := make([]struct{ id, name string }, len(textChannels))
+		chIDs := make([]string, len(textChannels))
 		for i, c := range textChannels {
-			name, _ := c["name"].(string)
-			id, _ := c["id"].(string)
-			items[i] = "#" + name
-			chData[i] = struct{ id, name string }{id, name}
+			items[i] = channelName(c)
+			chIDs[i], _ = c["id"].(string)
 		}
 		if len(items) == 0 {
-			items = []string{"(no channels)"}
+			items = []string{"(no text channels)"}
 		}
-		onSelect := func(i int) {
-			if i >= len(chData) {
+
+		args := sidebarArgs()
+		args["title"] = gname
+		args["items"] = items
+		args["on_select"] = func(idx int) {
+			if idx >= len(chIDs) {
 				return
 			}
-			cid := chData[i].id
-			cname := chData[i].name
+			cid := chIDs[idx]
+			cname := items[idx]
 			msgs, err := client.GetMessages(cid, 50, "")
 			if err != nil {
 				log.Printf("[MAIN] get messages fail: %v", err)
-				msgs = nil
+				return
 			}
-			// reverse
 			for l, r := 0, len(msgs)-1; l < r; l, r = l+1, r-1 {
 				msgs[l], msgs[r] = msgs[r], msgs[l]
 			}
-			// onBack should go to channel list, not guilds
-			onBack := func() {
-				// re-show channels for same guild
-				showChannels(idx)
-			}
-			app.Show("messages", map[string]interface{}{
-				"messages": msgs,
-				"title":    cname, // ui will add #
-				"on_back":  onBack,
-			})
+			msgArgs := sidebarArgs()
+			msgArgs["title"] = cname
+			msgArgs["messages"] = msgs
+			msgArgs["on_back"] = func() { showChannels(guildIdx) }
+			app.Show("messages", msgArgs)
 		}
-		app.Show("channels", map[string]interface{}{
-			"items":     items,
-			"title":     gname,
-			"on_select": onSelect,
-			"on_back":   showGuilds,
-		})
+		app.Show("home", args)
 	}
 
-	// quit handler
-	quit := func() { app.Stop() }
+	guilds, err := client.GetGuilds()
+	if err != nil {
+		log.Printf("[MAIN] get guilds fail: %v", err)
+	}
+	st.guilds = guilds
+	st.selDM = true
+	showDMs()
 
-	app.Add("guilds", ui.NewListScreen("KindleCord", nil, func(idx int) { showChannels(idx) }, quit, "[Quit]", true))
-	app.Add("channels", ui.NewListScreen("", nil, nil, showGuilds, "[Back to servers]", true))
-	app.Add("messages", ui.NewMessageScreen("", nil, showGuilds))
-
-	showGuilds()
-
-	// power goroutine for main
 	powerMainCh := make(chan bool, 1)
 	go func() {
 		for app.Running {
 			power.Poll()
 			if power.IsDouble() {
-				log.Printf("[MAIN] power double -> exit main")
 				select {
 				case powerMainCh <- true:
 				default:
@@ -390,9 +436,7 @@ func main() {
 	for app.Running {
 		select {
 		case <-powerMainCh:
-			log.Printf("[MAIN] power exit")
 			app.Stop()
-			break
 		default:
 		}
 		if !app.Running {
