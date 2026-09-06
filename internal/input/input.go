@@ -231,11 +231,19 @@ func (p *PowerWatcher) Poll() {
 				now := time.Now()
 				elapsed := now.Sub(p.last)
 				log.Printf("[POWER] power press elapsed=%v", elapsed)
-				if elapsed < 800*time.Millisecond {
+				if elapsed < 1000*time.Millisecond {
 					p.double = true
 					log.Printf("[POWER] DOUBLE detected!")
 				}
 				p.last = now
+			}
+			// Long press (hold > 2s) also triggers exit
+			if ev.Type == EV_KEY && ev.Value == 0 && (ev.Code == KEY_POWER || ev.Code == KEY_SLEEP || ev.Code == 116 || ev.Code == 142) {
+				now := time.Now()
+				if now.Sub(p.last) > 2*time.Second {
+					p.double = true
+					log.Printf("[POWER] LONG PRESS detected!")
+				}
 			}
 			// Also treat long hold (2s) as exit via IsDouble check? handled via timeout in main
 		}
