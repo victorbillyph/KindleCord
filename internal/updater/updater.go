@@ -20,7 +20,7 @@ const (
 )
 
 var (
-	CurrentVersion = "v0.3.5"
+	CurrentVersion = "v0.3.6"
 	ExecPath       func() string
 )
 
