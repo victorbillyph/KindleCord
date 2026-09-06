@@ -6,7 +6,9 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
 
 ## Buy me a coffee
 Hey, if you wanna support me, here:
+
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/victorflor0)
+
 if not, Its ok, im happy just for you seeing this
 
 ## Features
