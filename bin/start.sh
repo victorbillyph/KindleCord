@@ -14,6 +14,11 @@ cd "$EXT_DIR" || exit 1
 
 echo "=== KindleCord $(date) ===" > "$LOG"
 
+# Kill old instance if still running
+pkill -f "kindlecord" 2>> "$LOG" || true
+fuser -k 8080/tcp 2>> "$LOG" || true
+sleep 1
+
 cleanup() {
     echo "Cleanup..." >> "$LOG"
     iptables -D INPUT -p tcp --dport 8080 -j ACCEPT 2>> "$LOG"
@@ -35,11 +40,9 @@ echo "Stopping awesome..." >> "$LOG"
 killall -STOP awesome 2>> "$LOG"
 usleep 250000
 
-# Fix FAT exec bit
 chmod +x "$EXT_DIR/kindlecord" 2>> "$LOG"
 chmod +x "$EXT_DIR/kindlecord-arm" 2>> "$LOG"
 
-# Prefer native Go binary
 if [ -f "$EXT_DIR/kindlecord" ]; then
     echo "Using: $EXT_DIR/kindlecord (Go)" >> "$LOG"
     "$EXT_DIR/kindlecord" >> "$LOG" 2>&1
@@ -56,7 +59,6 @@ if [ -f "$EXT_DIR/kindlecord-arm" ]; then
     exit $EXIT
 fi
 
-# Fallback to Python (legacy)
 echo "Go binary not found, trying Python fallback..." >> "$LOG"
 for cmd in python3 python2.7 "/mnt/us/python/bin/python2.7" python; do
     if command -v "$cmd" >/dev/null 2>&1; then

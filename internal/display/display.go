@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-// Display handles framebuffer access with direct mmap + fallback to fbink.
+// Display handles framebuffer access with fbink (Kindle) or direct mmap/sim.
 type Display struct {
 	Width  int
 	Height int
@@ -25,12 +25,27 @@ type Display struct {
 	fd       *os.File
 	fbink    string
 	simulate bool
+	useFbink bool
 }
 
 const (
 	CellSize = 24
 	FBInk    = "/mnt/us/koreader/fbink"
 )
+
+var grayToFbink = map[uint8]string{
+	0x00: "BLACK", 0x11: "GRAY1", 0x22: "GRAY2", 0x33: "GRAY3",
+	0x44: "GRAY4", 0x55: "GRAY5", 0x66: "GRAY6", 0x77: "GRAY7",
+	0x88: "GRAY8", 0x99: "GRAY9", 0xAA: "GRAYA", 0xBB: "GRAYB",
+	0xCC: "GRAYC", 0xDD: "GRAYD", 0xEE: "GRAYE", 0xFF: "WHITE",
+}
+
+func grayName(gray uint8) string {
+	if v, ok := grayToFbink[gray]; ok {
+		return v
+	}
+	return "WHITE"
+}
 
 func detectFBParams() (w, h, stride, bpp int) {
 	w, h, stride, bpp = 1448, 1072, 1448, 8
@@ -87,7 +102,7 @@ func detectFBParams() (w, h, stride, bpp int) {
 	return
 }
 
-// New creates a Display. Tries mmap /dev/fb0, falls back to in-memory sim.
+// New creates a Display. Uses fbink on Kindle, mmap/sim on PC.
 func New() *Display {
 	w, h, stride, bpp := detectFBParams()
 	d := &Display{
@@ -99,24 +114,31 @@ func New() *Display {
 		Rows:   h / CellSize,
 		fbink:  FBInk,
 	}
-	// check fbink exists
 	if _, err := os.Stat(FBInk); err != nil {
 		d.fbink = ""
 	}
+	if d.fbink != "" {
+		// Kindle with fbink - use fbink subprocess (handles rotation, no mmap needed)
+		d.useFbink = true
+		// Still try to open fb0 for refresh ioctl fallback
+		if f, err := os.OpenFile("/dev/fb0", os.O_RDWR, 0); err == nil {
+			d.fd = f
+		}
+		log.Printf("[DISPLAY] fbink mode %dx%d stride=%d bpp=%d cols=%d rows=%d", w, h, stride, bpp, d.Cols, d.Rows)
+		return d
+	}
 
-	// Try to mmap /dev/fb0
+	// PC / no fbink - try mmap
 	f, err := os.OpenFile("/dev/fb0", os.O_RDWR, 0)
 	if err != nil {
 		log.Printf("[DISPLAY] /dev/fb0 not available (%v), sim mode %dx%d cols=%d rows=%d", err, w, h, d.Cols, d.Rows)
 		d.simulate = true
-		d.buf = make([]byte, w*h*4) // use 32bpp sim buffer
+		d.buf = make([]byte, w*h*4)
 		d.BPP = 32
 		d.Stride = w * 4
 		return d
 	}
 	d.fd = f
-
-	// Try mmap
 	var size int
 	if bpp == 8 {
 		size = stride * h
@@ -135,7 +157,6 @@ func New() *Display {
 		d.buf = make([]byte, w*h*4)
 		d.BPP = 32
 		d.Stride = w * 4
-		// keep fd for ioctl fallback
 	} else {
 		d.buf = mmap
 		d.mmaped = true
@@ -175,7 +196,6 @@ func (d *Display) setPixel(x, y int, color uint8) {
 			d.buf[off] = color
 		}
 	} else {
-		// 32bpp BGRA (or XRGB)
 		off := y*d.Stride + x*4
 		if off+3 < len(d.buf) {
 			d.buf[off] = color
@@ -190,6 +210,12 @@ func (d *Display) setPixel(x, y int, color uint8) {
 
 // Clear fills entire screen
 func (d *Display) Clear(color uint8) {
+	if d.useFbink {
+		cname := grayName(color)
+		cmd := exec.Command(d.fbink, "-q", "-k", "-B", cname, "-b")
+		_ = cmd.Run()
+		return
+	}
 	if d.simulate && d.BPP == 32 {
 		for i := 0; i < len(d.buf); i += 4 {
 			d.buf[i] = color
@@ -219,6 +245,13 @@ func (d *Display) FillRect(x, y, w, h int, color uint8) {
 	if w <= 0 || h <= 0 {
 		return
 	}
+	if d.useFbink {
+		cname := grayName(color)
+		region := fmt.Sprintf("top=%d,left=%d,width=%d,height=%d", y, x, w, h)
+		cmd := exec.Command(d.fbink, "-q", "-k", region, "-B", cname, "-b")
+		_ = cmd.Run()
+		return
+	}
 	if d.BPP == 8 {
 		for yy := y; yy < y+h; yy++ {
 			off := yy*d.Stride + x
@@ -238,6 +271,7 @@ func (d *Display) FillRect(x, y, w, h int, color uint8) {
 }
 
 func (d *Display) HLine(x, y, w int, color uint8) {
+	// use FillRect which handles fbink
 	d.FillRect(x, y, w, 1, color)
 }
 
@@ -255,6 +289,10 @@ func (d *Display) Rect(x, y, w, h int, color uint8, thickness int) {
 }
 
 func (d *Display) Pixel(x, y int, color uint8) {
+	if d.useFbink {
+		d.FillRect(x, y, 1, 1, color)
+		return
+	}
 	d.setPixel(x, y, color)
 }
 
@@ -270,6 +308,19 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if len(text) > maxChars {
 		text = text[:maxChars]
 	}
+	if d.useFbink {
+		px := cx * CellSize
+		py := cy * CellSize
+		fgName := grayName(fg)
+		bgName := grayName(bg)
+		cmd := exec.Command(d.fbink, "-q", "-b", "-S", "3", "-F", "VGA", "-C", fgName, "-B", bgName, "-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py), text)
+		if err := cmd.Run(); err != nil {
+			// fallback without -F
+			cmd2 := exec.Command(d.fbink, "-q", "-b", "-S", "3", "-C", fgName, "-B", bgName, "-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py), text)
+			_ = cmd2.Run()
+		}
+		return
+	}
 	px := cx * CellSize
 	py := cy * CellSize
 	for i, ch := range text {
@@ -284,10 +335,8 @@ func (d *Display) drawChar(x, y int, ch byte, fg, bg uint8) {
 		ch = '?'
 	}
 	glyph := font8x8[ch]
-	// bg fill
 	d.FillRect(x, y, CellSize, CellSize, bg)
-	// each of 8 rows -> scaled 3x (24/8=3)
-	scale := CellSize / 8 // 3
+	scale := CellSize / 8
 	for row := 0; row < 8; row++ {
 		bits := glyph[row]
 		for col := 0; col < 8; col++ {
@@ -296,7 +345,6 @@ func (d *Display) drawChar(x, y int, ch byte, fg, bg uint8) {
 			if on {
 				c = fg
 			}
-			// fill scale x scale block
 			sx := x + col*scale
 			sy := y + row*scale
 			d.FillRect(sx, sy, scale, scale, c)
@@ -304,8 +352,12 @@ func (d *Display) drawChar(x, y int, ch byte, fg, bg uint8) {
 	}
 }
 
-// InvertRect inverts region (for selection feedback if needed)
+// InvertRect inverts region
 func (d *Display) InvertRect(x, y, w, h int) {
+	if d.useFbink {
+		d.FillRect(x, y, w, h, 0x00)
+		return
+	}
 	x, y, w, h = d.clipRect(x, y, w, h)
 	for yy := y; yy < y+h; yy++ {
 		for xx := x; xx < x+w; xx++ {
@@ -326,21 +378,17 @@ func (d *Display) InvertRect(x, y, w, h int) {
 	}
 }
 
-// Refresh triggers e-ink update. Tries fbink, then mxcfb ioctl, else no-op/sim.
+// Refresh triggers e-ink update.
 func (d *Display) Refresh() {
 	if d.simulate {
-		// On PC, just log. Could dump to file for debugging.
 		return
 	}
-	// Try fbink full refresh
 	if d.fbink != "" {
 		cmd := exec.Command(d.fbink, "-q", "-s", "-f", "-W", "GC16", "-w")
 		_ = cmd.Run()
 		return
 	}
-	// Try mxcfb ioctl (Kindle PW3)
 	if d.fd != nil {
-		// MXCFB_SEND_UPDATE = 0x4044462E
 		const mxcfbSendUpdate = 0x4044462E
 		type mxcfbUpdateData struct {
 			UpdateRegion struct{ Top, Left, Width, Height uint32 }
@@ -358,8 +406,8 @@ func (d *Display) Refresh() {
 		upd.UpdateRegion.Left = 0
 		upd.UpdateRegion.Width = uint32(d.Width)
 		upd.UpdateRegion.Height = uint32(d.Height)
-		upd.WaveformMode = 2 // GC16
-		upd.UpdateMode = 0   // full
+		upd.WaveformMode = 2
+		upd.UpdateMode = 0
 		upd.Temp = 1
 		_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, d.fd.Fd(), uintptr(mxcfbSendUpdate), uintptr(unsafe.Pointer(&upd)))
 	}
@@ -377,7 +425,7 @@ func (d *Display) Close() {
 	}
 }
 
-// DebugDump dumps sim buffer as ASCII (for PC testing)
+// DebugDump dumps sim buffer as ASCII
 func (d *Display) DebugDump() string {
 	if !d.simulate {
 		return ""
@@ -385,7 +433,6 @@ func (d *Display) DebugDump() string {
 	var sb strings.Builder
 	for row := 0; row < d.Rows && row < 20; row++ {
 		for col := 0; col < d.Cols && col < 80; col++ {
-			// sample center pixel of cell
 			px := col*CellSize + CellSize/2
 			py := row*CellSize + CellSize/2
 			off := py*d.Stride + px*4
@@ -406,16 +453,7 @@ func (d *Display) DebugDump() string {
 
 func (d *Display) IsSimulate() bool { return d.simulate }
 
-// GrayToFbink compatibility (not used in Go path but kept)
+// GrayToFbink compatibility
 func GrayToFbink(gray uint8) string {
-	m := map[uint8]string{
-		0x00: "BLACK", 0x11: "GRAY1", 0x22: "GRAY2", 0x33: "GRAY3",
-		0x44: "GRAY4", 0x55: "GRAY5", 0x66: "GRAY6", 0x77: "GRAY7",
-		0x88: "GRAY8", 0x99: "GRAY9", 0xAA: "GRAYA", 0xBB: "GRAYB",
-		0xCC: "GRAYC", 0xDD: "GRAYD", 0xEE: "GRAYE", 0xFF: "WHITE",
-	}
-	if v, ok := m[gray]; ok {
-		return v
-	}
-	return fmt.Sprintf("GRAY%d", gray>>4)
+	return grayName(gray)
 }
