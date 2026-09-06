@@ -6,13 +6,13 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
 
 ## Features
 
-- Full-screen native Discord client running directly on your Kindle
-- Graphical UI rendered via framebuffer (KOReader's FbInk)
-- Touch-enabled (tap to navigate, scroll lists)
-- View your servers (guilds), channels, and messages
-- Server selection → channel selection → message reading flow
-- Safe power-off: double-press the power button to exit
-- No framework hacks — runs alongside the stock Kindle UI via pillow freeze
+- Full-screen native Discord client on Kindle e-ink
+- Anti-aliased UI — Go TTF (Go Regular/Bold 18/20px via freetype) + rounded rectangles, not 8x8 bitmap
+- Framebuffer direct — offscreen 8bpp buffer, `mmap` when possible + bundled `fbink` for refresh (no KOReader required)
+- Touch navigation — tap guild → channel → messages, scroll arrows
+- Double-press power button to exit cleanly (unfreeze awesome, re-enable pillow)
+- Web login — paste Discord token via phone/PC on `http://<kindle-ip>:8080`
+- Single static Go binary — no Python, no pip
 
 ## Screenshots
 
@@ -20,112 +20,139 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
 
 ## Requirements
 
-- **Jailbroken Kindle** (PW3, PW4, or similar)
-- **No Python needed** — v0.2.0+ is a native Go static binary (no KOReader/fbink required, direct `/dev/fb0` mmap). Legacy Python version still available as fallback.
+- **Jailbroken Kindle** (PW3, PW4, etc.)
+- No extra dependencies — `fbink` ARM binary is bundled in `bin/fbink` (KOReader optional)
+- Network — Kindle and phone/PC on same Wi-Fi
 
 ## Installation
 
-1. **Copy the extension** to your Kindle via USB:
+### From release (recommended)
 
+1. Download `KindleCord.zip` from [Releases](https://github.com/victorbillyph/KindleCord/releases)
+2. Extract and copy to Kindle via USB:
    ```
    cp -r KindleCord /mnt/us/extensions/
    ```
+3. Eject Kindle safely.
 
-2. **Open KUAL** on your Kindle — "KindleCord" should appear in the menu.
+### From source
 
-3. **Tap to launch.**
+```
+git clone https://github.com/victorbillyph/KindleCord
+cd KindleCord
+make build-arm   # -> build/kindlecord-arm (ARM, Kindle)
+make build       # -> build/kindlecord (x64, PC sim)
+```
 
-4. The screen will freeze and KindleCord will display a URL like `http://192.168.x.x:8080`.
-
-5. **Open that URL** on your phone or computer.
-
-6. **Paste your Discord token** into the web page (see *Getting your token* below).
-
-7. The app loads your servers and you're in!
-
-## Getting your Discord token
-
-1. Open Discord in a browser (not the desktop app)
-2. Press `Ctrl + Shift + I` (DevTools)
-3. Go to the **Console** tab
-4. Type: `localStorage.getItem('token')`
-5. Copy the value (it starts with `mfa_` or `ND...`)
-
-> **⚠️ Security:** Your token is like a password. Anyone with it has full access to your account. The token is stored locally on your Kindle in `data/token.txt` and is never sent anywhere except to Discord's API.
+Copy `build/kindlecord-arm` to Kindle as `extensions/KindleCord/kindlecord`:
+```
+cp build/kindlecord-arm /run/media/<Kindle>/extensions/KindleCord/kindlecord
+cp bin/fbink /run/media/<Kindle>/extensions/KindleCord/bin/fbink
+```
 
 ## Usage
 
-- **Login →** URL shown on screen, paste token via web
-- **Guild list →** tap a server name to see its channels
-- **Channel list →** tap a channel (`#name`) to read messages
-- **Message view →** read messages, tap top/bottom to scroll
-- **Scroll indicators:**
-  - `/\\` at top → tap to scroll up
-  - `\\/` at bottom → tap to scroll down
-- **Exit →** double-press the physical power button
+1. Open **KUAL** on Kindle — tap **KindleCord**.
+2. Screen freezes, shows URL like `http://192.168.1.50:8080`.
+3. Open that URL on phone/PC, paste Discord token, tap **Log in**.
+4. Browse guilds → `Tap` a server → `Tap` a `#channel` to read messages.
+5. Scroll: `/\` (top) and `\/` (bottom). Tap `Exit`/`Back` or double-press **power**.
 
-## Project Structure (v0.2.0 Go)
+### Getting your Discord token
+
+1. Open Discord in a browser (not desktop app)
+2. `Ctrl+Shift+I` → Console
+3. `localStorage.getItem('token')`
+4. Copy value (`mfa_...` or `ND...`)
+
+> **⚠️ Security:** Token is stored at `data/token.txt` on Kindle and only sent to `discord.com/api/v10`. Treat it like a password.
+
+## Project Structure
 
 ```
 KindleCord/
-├── cmd/kindlecord/main.go   # Entry point
+├── cmd/kindlecord/main.go      # App flow, navigation, event loop
 ├── internal/
-│   ├── display/             # mmap /dev/fb0 + font 8x8@3x (no fbink)
-│   ├── input/               # evdev touch + power watcher
-│   ├── discord/             # Discord REST v10 (fix Bot prefix)
-│   ├── server/              # net/http token server
-│   └── ui/                  # Win95 UI (scroll fix)
-├── kindlecord/              # Legacy Python (fallback)
+│   ├── display/                # Display engine
+│   │   ├── display.go          # offscreen 8bpp buf + fbink/mmap + GC16
+│   │   ├── font.go             # legacy 8x8 bitmap
+│   │   ├── font_aa.go          # TTF AA (Go Regular/Bold, freetype 18/20px)
+│   │   └── rounded.go          # FillRoundRect AA
+│   ├── input/                  # evdev /dev/input/eventX + PowerWatcher
+│   ├── discord/                # Discord REST v10 (correct auth, rate-limit)
+│   ├── server/                 # net/http token server
+│   └── ui/                     # Win95-style UI (Button/Label/TitleBar/Screens)
 ├── bin/
-│   ├── start.sh             # Prefers Go binary, fallback Python
+│   ├── fbink                   # bundled FBInk ARM (NiLuJe)
+│   ├── start.sh                # launcher (prefers Go, fallback Python)
 │   └── stop.sh
-├── build/                   # CI artifacts (kindlecord, kindlecord-arm)
-├── .github/workflows/build.yml
-├── data/                    # Runtime data (token, config)
-├── config.xml
+├── kindlecord/                 # legacy Python (fallback)
+├── build/                      # CI artifacts
+├── .github/workflows/build.yml # CI: vet + x64 + ARM
+├── data/                       # runtime (token, config.example.json)
+├── config.xml                  # KUAL metadata (v0.2.0)
 ├── menu.json
 └── README.md
 ```
 
 ## How It Works
 
-### Rendering (v0.2.0 Go)
+### Rendering
 
-Direct `mmap("/dev/fb0")` with in-RAM buffer (no fork per draw). 8x8 bitmap font scaled 3x to 24x24 cells (60x44 grid at 1448x1072). Fallback to `fbink -W GC16` if available, else `MXCFB_SEND_UPDATE` ioctl.
-
-### Display Architecture
+Offscreen 8bpp grayscale buffer (`1448x1072` → `60 cols × 44 rows` at `24px` cells). All drawing (`FillRect`, `FillRoundRect`, `DrawTextAA`) writes to buffer with grayscale AA (freetype `Go Regular` 18px, `Bold` 20px, `96 DPI`, `FullHinting`). On refresh, buffer is blitted to `/dev/fb0` (`mmap` if available, else `pwrite` with stride handling) then `fbink -q -s -f -W GC16 -w` triggers e-ink GC16 update. No per-draw `fork`.
 
 ```
-Go (UI) → Display.FillRect/DrawText → []byte buffer → /dev/fb0 mmap → GC16 refresh → e-ink panel
+UI (AA TTF) → Display.buf (8bpp) → /dev/fb0 (mmap/pwrite) → fbink GC16 → EPDC
 ```
 
-### Touch Input
+### Bundled fbink
 
-Touch events are read directly from `/dev/input/event1` (or `event0` as fallback). The input reader parses `EV_ABS` (MT position) + `EV_KEY` (BTN_TOUCH) events and translates them to UI coordinates, which are matched against component bounding boxes.
+`bin/fbink` is checked first (`extensions/KindleCord/bin/fbink`), then `koreader/fbink`. Standalone — KOReader not required. `display.go:findFbink()` handles fallback.
 
-### Power Off
+### Touch & Power
 
-A `PowerWatcher` thread monitors `/dev/input/event0` for power button presses. Two presses within 500 ms trigger a clean exit (unfreeze awesome, re-enable pillow, restore the Kindle UI).
+Single-FD `evdev` reader (`/dev/input/event1` → fallback `event0`) parses `EV_ABS MT_POSITION_X/Y` + `EV_KEY BTN_TOUCH`. `PowerWatcher` on `event0` (non-blocking) detects double `KEY_POWER`/`KEY_SLEEP` within 500ms to exit.
+
+### Auth
+
+`internal/discord` uses `net/http` + `InsecureSkipVerify` (Kindle CA outdated), correct `Authorization` (no `Bot ` prefix for user tokens), `Host` header, `429` retry.
+
+## Build & CI
+
+```
+make build      # x64 7-8M
+make build-arm  # ARM 7.4M Kindle (CGO_ENABLED=0 GOARCH=arm GOARM=7)
+make test       # go vet
+```
+
+GitHub Actions `.github/workflows/build.yml` (Go 1.25) builds both on push/tags/releases and uploads `KindleCord.zip`.
+
+## Troubleshooting
+
+- **White screen / top bar only** — old mmap without fbink. Update to `v0.2.0+` (fbink bundled).
+- **Closes immediately** — was `pkill -f kindlecord` killing `kindlecord.sh`; fixed to `killall`+`pkill -x`.
+- **Address already in use :8080** — `start.sh` now `killall`+`fuser -k 8080/tcp` before launch.
+- **401 Invalid token** — token with quotes/spaces is trimmed; invalid is removed, tap `Exit` to retry.
+- **No fbink found** — ensure `bin/fbink` is `chmod +x` (start.sh does it).
 
 ## Technical Details
 
 | Component | Technology |
 |-----------|-----------|
-| Language | **Go 1.21** static binary (no Python) |
-| Rendering | `mmap /dev/fb0` direct (fbink fallback) |
-| Font | 8×8 bitmap, 3× scaled (24×24 cells) |
-| Display | 1448×1072 landscape (Kindle PW3) |
-| Touch | `/dev/input/event1` evdev, single-FD |
-| Network | Discord REST API v10, `net/http` on :8080 |
-| Frame buffer | 8-bit grayscale, GC16 waveform |
+| Language | Go 1.25 static binary, `-ldflags="-s -w"` |
+| Rendering | Offscreen 8bpp → `/dev/fb0` + `fbink` GC16 |
+| Font | Go Regular/Bold TTF 18/20px, freetype AA |
+| UI | Rounded rects (r=8), AA text |
+| Display | 1448×1072 landscape, 24px cells (60×44) |
+| Touch | `/dev/input/event1` evdev, single FD |
+| Network | Discord REST v10, `net/http` :8080 |
+| Bundle | `bin/fbink` ARM included |
 
 ## Limitations
 
-- **Read-only (for now):** You can read messages, but sending messages and reactions are not yet wired in the UI (the Discord API client supports them).
-- **No Gateway / real-time:** Messages are fetched via REST (polling). No WebSocket/presence yet.
-- **No keyboard:** Token entry is done via a web page on your phone/PC.
-- **Scrolling only** — no pull-to-refresh.
-- **Single language:** UI is in Portuguese (Brazilian). Contributions for i18n welcome.
+- Read-only — reading messages, no send/reactions yet (API supports it)
+- REST polling, no Gateway WebSocket
+- Token via web (no on-device keyboard)
 
 ## License
 
