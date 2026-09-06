@@ -26,7 +26,7 @@ button:hover{background:#b4befe}
 <div class="card"><h1>KindleCord</h1>
 <p>Paste your Discord token to log in on your Kindle.</p>
 <form method="POST" action="/">
-<input type="text" name="token" placeholder="Token do Discord" required autocomplete="off">
+<input type="text" name="token" placeholder="Discord token" required autocomplete="off">
 <button type="submit">Log in</button></form>
 <div class="hint">
 How to get your token:<br>

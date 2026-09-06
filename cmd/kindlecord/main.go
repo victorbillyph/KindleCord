@@ -177,7 +177,7 @@ func main() {
 	if err != nil {
 		log.Printf("[MAIN] login fail: %v", err)
 		// show error screen
-		title := "Token invalido"
+		title := "Invalid token"
 		if !strings.Contains(err.Error(), "401") {
 			title = "Error"
 		}
@@ -185,7 +185,7 @@ func main() {
 		if len(lines) > 3 {
 			lines = lines[:3]
 		}
-		items := append(lines, "", "Token invalido foi removido.", "Toque Exit e tente novamente.")
+		items := append(lines, "", "Invalid token was removed.", "Tap Exit and try again.")
 		if title == "Error" {
 			items = []string{err.Error(), "", "Press power 2x to exit"}
 		}
@@ -241,7 +241,7 @@ func main() {
 			}
 		}
 		if len(names) == 0 {
-			names = []string{"(nenhum servidor)"}
+			names = []string{"(no servers)"}
 		}
 		app.Show("guilds", map[string]interface{}{"items": names, "title": "KindleCord"})
 	}
@@ -275,7 +275,7 @@ func main() {
 			chData[i] = struct{ id, name string }{id, name}
 		}
 		if len(items) == 0 {
-			items = []string{"(nenhum canal)"}
+			items = []string{"(no channels)"}
 		}
 		onSelect := func(i int) {
 			if i >= len(chData) {

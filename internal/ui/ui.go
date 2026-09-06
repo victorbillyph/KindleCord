@@ -305,7 +305,7 @@ func (s *LoginScreen95) build() {
 	s.Components = nil
 	s.Components = append(s.Components, NewTitleBar("KindleCord Login", s.OnQuit))
 	y := 4
-	s.Components = append(s.Components, NewLabel(2, y, "Abra no celular:", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "Open on your phone:", 0, W95Black, W95White))
 	y += 2
 	url := s.URL
 	if url == "" {
@@ -317,13 +317,13 @@ func (s *LoginScreen95) build() {
 	}
 	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, W95Blue, W95White))
 	y += 3
-	s.Components = append(s.Components, NewLabel(2, y, "Cole seu token do Discord", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, W95Black, W95White))
 	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "para fazer login.", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, W95Black, W95White))
 	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "Aguardando token...", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "Waiting for token...", 0, W95Black, W95White))
 	btnY := d.Rows - 4
-	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "Sair", s.OnQuit, 8))
+	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "Exit", s.OnQuit, 8))
 }
 func (s *LoginScreen95) Render(d *display.Display) { s.BaseScreen.Render(d) }
 func (s *LoginScreen95) OnTouch(px, py int) bool {
@@ -351,7 +351,7 @@ type ListScreen95 struct {
 
 func NewListScreen(title string, items []string, onSelect func(int), onBack func(), backLabel string, showTitle bool) *ListScreen95 {
 	if backLabel == "" {
-		backLabel = "Voltar"
+		backLabel = "Back"
 	}
 	return &ListScreen95{Title: title, Items: items, OnSelect: onSelect, OnBack: onBack, BackLabel: backLabel, ShowTitle: showTitle}
 }
