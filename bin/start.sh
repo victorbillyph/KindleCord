@@ -13,9 +13,12 @@ LOG="$EXT_DIR/kindlecord.log"
 cd "$EXT_DIR" || exit 1
 
 echo "=== KindleCord $(date) ===" > "$LOG"
+echo "Start kindlecord.sh PID=$$" >> "$LOG"
 
-# Kill old instance if still running
-pkill -f "kindlecord" 2>> "$LOG" || true
+# Kill old kindlecord binary only (not this script)
+killall kindlecord 2>> "$LOG" || true
+pkill -x kindlecord 2>> "$LOG" || true
+# Free port 8080 if stuck
 fuser -k 8080/tcp 2>> "$LOG" || true
 sleep 1
 
@@ -42,6 +45,7 @@ usleep 250000
 
 chmod +x "$EXT_DIR/kindlecord" 2>> "$LOG"
 chmod +x "$EXT_DIR/kindlecord-arm" 2>> "$LOG"
+chmod +x "$EXT_DIR/bin/fbink" 2>> "$LOG"
 
 if [ -f "$EXT_DIR/kindlecord" ]; then
     echo "Using: $EXT_DIR/kindlecord (Go)" >> "$LOG"

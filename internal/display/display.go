@@ -33,6 +33,24 @@ const (
 	FBInk    = "/mnt/us/koreader/fbink"
 )
 
+var fbinkPaths = []string{
+	"/mnt/us/extensions/KindleCord/bin/fbink",
+	"/mnt/us/extensions/KindleCord/fbink",
+	"/mnt/us/koreader/fbink",
+	"./bin/fbink",
+	"./fbink",
+	FBInk,
+}
+
+func findFbink() string {
+	for _, p := range fbinkPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 var grayToFbink = map[uint8]string{
 	0x00: "BLACK", 0x11: "GRAY1", 0x22: "GRAY2", 0x33: "GRAY3",
 	0x44: "GRAY4", 0x55: "GRAY5", 0x66: "GRAY6", 0x77: "GRAY7",
@@ -112,10 +130,7 @@ func New() *Display {
 		BPP:    bpp,
 		Cols:   w / CellSize,
 		Rows:   h / CellSize,
-		fbink:  FBInk,
-	}
-	if _, err := os.Stat(FBInk); err != nil {
-		d.fbink = ""
+		fbink:  findFbink(),
 	}
 	if d.fbink != "" {
 		// Kindle with fbink - use fbink subprocess (handles rotation, no mmap needed)
@@ -124,7 +139,7 @@ func New() *Display {
 		if f, err := os.OpenFile("/dev/fb0", os.O_RDWR, 0); err == nil {
 			d.fd = f
 		}
-		log.Printf("[DISPLAY] fbink mode %dx%d stride=%d bpp=%d cols=%d rows=%d", w, h, stride, bpp, d.Cols, d.Rows)
+		log.Printf("[DISPLAY] fbink mode %s %dx%d stride=%d bpp=%d cols=%d rows=%d", d.fbink, w, h, stride, bpp, d.Cols, d.Rows)
 		return d
 	}
 
