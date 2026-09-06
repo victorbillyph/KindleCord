@@ -482,10 +482,9 @@ func (s *LoginScreen) build() {
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Access on Browser to Configure", FT_TITLE, FG_BLACK))
 	y += 38
 
-	// URL line - display the full URL directly
-	contentW := d.Width - CONTENT_X - 24
-	s.items = append(s.items, NewBox(CONTENT_X+12, y, contentW, 48, urlStr, FT_TITLE, BG_DM, FG_WHITE))
-	y += 58
+	// URL line - simple label, larger font, high contrast
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, urlStr, FT_TITLE, FG_BLACK))
+	y += 40
 
 	if s.SSHInfo != "" {
 		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Or SSH:", FT_SMALL, FG_MUTED))
