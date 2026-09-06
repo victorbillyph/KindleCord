@@ -29,12 +29,28 @@ type Display struct {
 	fbink    string
 	simulate bool
 	useFbink bool
+	font     string
 }
 
 const (
 	CellSize = 24
 	FBInk    = "/mnt/us/koreader/fbink"
 )
+
+var fbFontPaths = []string{
+	"/usr/java/lib/fonts/Amazon-Ember-Regular.ttf",
+	"/usr/java/lib/fonts/Helvetica_LT_65_Medium.ttf",
+	"/usr/java/lib/fonts/LiberationSans-Regular.ttf",
+}
+
+func findFont() string {
+	for _, p := range fbFontPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
 
 var fbinkPaths = []string{
 	"/mnt/us/extensions/KindleCord/bin/fbink",
@@ -169,7 +185,8 @@ func New() *Display {
 			d.Rows = 60
 		}
 		d.useFbink = true
-		log.Printf("[DISPLAY] fbink mode %s %dx%d cols=%d rows=%d", d.fbink, w, h, d.Cols, d.Rows)
+		d.font = findFont()
+		log.Printf("[DISPLAY] fbink mode %s %dx%d cols=%d rows=%d font=%s", d.fbink, w, h, d.Cols, d.Rows, d.font)
 		return d
 	}
 
@@ -288,11 +305,15 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 	if d.useFbink {
 		px := cx * CellSize
 		py := cy * CellSize
-		// Draw from bottom-left (-1px) so the 24px cell aligns like the old engine.
-		args := []string{"-q", "-b", "-S", "3", "-F", "VGA",
+		// Anti-aliased TrueType via fbink's OpenType support.
+		font := d.font
+		if font == "" {
+			font = findFont()
+		}
+		args := []string{"-q", "-b",
+			"-t", "regular=" + font + ",size=24,format",
 			"-C", grayName(fg), "-B", grayName(bg),
 			"-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py)}
-		// fbink treats text arg after options as the string to print.
 		_ = d.runFB(append(args, text)...)
 		return
 	}
