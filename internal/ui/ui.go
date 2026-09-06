@@ -19,11 +19,11 @@ const (
 const cell = display.CellSize
 
 const (
-	FontTitle   = 22
-	FontButton  = 18
-	FontLabel   = 16
-	FontSmall   = 14
-	FontClose   = 20
+	FontTitle   = 16
+	FontButton  = 14
+	FontLabel   = 12
+	FontSmall   = 10
+	FontClose   = 14
 )
 
 func cx(c int) int { return c * cell }
