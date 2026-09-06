@@ -30,12 +30,12 @@ const (
 )
 
 const (
-	FT_ICON  = 16
-	FT_TITLE = 14
-	FT_BTN   = 12
-	FT_LABEL = 12
-	FT_MSG   = 12
-	FT_SMALL = 10
+	FT_ICON  = 26
+	FT_TITLE = 22
+	FT_BTN   = 18
+	FT_LABEL = 16
+	FT_MSG   = 16
+	FT_SMALL = 13
 )
 
 func trunc(s string, max int) string {
@@ -104,7 +104,7 @@ func (s *Sidebar) Render(d *display.Display) {
 	}
 	d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, sbDMY, sbIconSize, sbIconSize, sbIconSize/2, dmBg)
 	d.FillRoundRect((SIDEBAR_W-sbIconSize+4)/2, sbDMY+2, sbIconSize-4, sbIconSize-4, (sbIconSize-4)/2, BG_DM)
-	d.DrawTextPixel(SIDEBAR_W/2-7, sbDMY+13, FT_ICON, "D", FG_WHITE, BG_DM)
+	d.DrawTextPixel(SIDEBAR_W/2-7, sbDMY+9, FT_ICON, "D", FG_WHITE, BG_DM)
 
 	d.FillRect(SIDEBAR_W/2-14, sbDividerY, 28, 2, 0x55)
 
@@ -137,7 +137,7 @@ func (s *Sidebar) Render(d *display.Display) {
 			d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, y, sbIconSize, sbIconSize, sbIconSize/2, BG_SELECTED)
 		}
 		d.FillRoundRect((SIDEBAR_W-sbIconSize+4)/2, y+2, sbIconSize-4, sbIconSize-4, (sbIconSize-4)/2, ibg)
-		d.DrawTextPixel(SIDEBAR_W/2-7, y+13, FT_ICON, letter, FG_WHITE, ibg)
+		d.DrawTextPixel(SIDEBAR_W/2-7, y+9, FT_ICON, letter, FG_WHITE, ibg)
 		// selection indicator bar
 		if !s.SelectedDM && s.ServerIdx == i {
 			d.FillRoundRect(4, y+6, 4, sbIconSize-12, 2, FG_WHITE)
@@ -159,7 +159,7 @@ func (s *Sidebar) Render(d *display.Display) {
 	uy := h - sbIconSize - 8
 	if uy > s.serverTop() {
 		d.FillRoundRect((SIDEBAR_W-sbIconSize)/2, uy, sbIconSize, sbIconSize, sbIconSize/2, BG_SIDEBAR)
-		d.DrawTextPixel(SIDEBAR_W/2-7, uy+13, FT_ICON, "U", FG_WHITE, BG_SIDEBAR)
+		d.DrawTextPixel(SIDEBAR_W/2-7, uy+9, FT_ICON, "U", FG_WHITE, BG_SIDEBAR)
 	}
 }
 
@@ -225,14 +225,14 @@ type Button struct {
 }
 
 func NewButton(x, y int, text string, cb func()) *Button {
-	w := len(text)*8 + 24
+	w := len(text)*9 + 24
 	return &Button{X: x, Y: y, W: w, H: 36, Text: text, Callback: cb}
 }
 
 func (b *Button) Render(d *display.Display) {
 	d.FillRoundRect(b.X, b.Y, b.W, b.H, 8, BG_BTN)
-	tx := b.X + (b.W-len(b.Text)*7)/2
-	ty := b.Y + (b.H-12)/2
+	tx := b.X + (b.W-len(b.Text)*9)/2
+	ty := b.Y + (b.H-FT_BTN)/2
 	d.DrawTextPixel(tx, ty, FT_BTN, b.Text, FG_WHITE, BG_BTN)
 }
 
@@ -294,7 +294,7 @@ func (li *ListItem) Render(d *display.Display) {
 	}
 	d.FillRoundRect(li.X, li.Y, li.W, li.H, 6, bg)
 	d.DrawRoundRectBorder(li.X, li.Y, li.W, li.H, 6, FG_BORDER)
-	d.DrawTextPixel(li.X+14, li.Y+(li.H-12)/2, li.Size, li.Text, li.FG, bg)
+	d.DrawTextPixel(li.X+14, li.Y+(li.H-li.Size)/2, li.Size, li.Text, li.FG, bg)
 }
 
 func (li *ListItem) Contains(x, y int) bool {

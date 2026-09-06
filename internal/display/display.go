@@ -315,7 +315,7 @@ func (d *Display) DrawTextPixel(x, y, size int, text string, fg, bg uint8) {
 		if font == "" {
 			font = findFont()
 		}
-		opts := fmt.Sprintf("regular=%s,size=%d,left=%d,top=%d", font, size, x, y)
+		opts := fmt.Sprintf("regular=%s,px=%d,left=%d,top=%d", font, size, x, y)
 		args := []string{"-q", "-b", "-t", opts,
 			"-C", grayName(fg), "-B", grayName(bg)}
 		_ = d.runFB(append(args, text)...)
