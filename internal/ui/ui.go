@@ -215,17 +215,15 @@ func (m *ModernHeader) Tap(px, py int) bool {
 	return false
 }
 
-// Card - white rounded container with soft shadow
+// Card - white rounded container
 type Card struct {
 	x, y, w, h, radius int
 }
 
 func (c *Card) Render(d *display.Display) {
-	// shadow
-	d.FillRoundRect(c.x+2, c.y+2, c.w, c.h, c.radius, W95Dark)
 	d.FillRoundRect(c.x, c.y, c.w, c.h, c.radius, W95White)
-	// inner border
-	d.FillRoundRect(c.x, c.y, c.w, c.h, c.radius, W95White)
+	d.FillRect(c.x, c.y+c.radius, 2, c.h-c.radius*2, W95Dark)
+	d.FillRect(c.x+c.w-2, c.y+c.radius, 2, c.h-c.radius*2, W95Dark)
 }
 func (c *Card) Contains(px, py int) bool { return false }
 func (c *Card) Tap(px, py int) bool      { return false }
