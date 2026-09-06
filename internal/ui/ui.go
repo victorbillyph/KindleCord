@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"net/url"
 	"strings"
 	"sync"
 
@@ -473,32 +474,47 @@ func (s *LoginScreen) build() {
 	d := s.App.Display
 	s.items = nil
 
-	y := 70
-	url := s.URL
-	if url == "" {
-		url = "http://0.0.0.0:8080"
+	urlStr := s.URL
+	if urlStr == "" {
+		urlStr = "http://0.0.0.0:8080"
 	}
 
-	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Open on your computer/phone:", FT_LABEL, FG_MUTED))
-	y += 28
+	// Extract IP for display
+	ip := ""
+	if u, err := url.Parse(urlStr); err == nil {
+		ip = u.Hostname()
+	}
 
-	// URL box
-	contentW := d.Width - CONTENT_X - 16
-	s.items = append(s.items, NewBox(CONTENT_X+8, y, contentW, 44, url, FT_LABEL, BG_DM, FG_WHITE))
-	y += 54
+	y := 80
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Send your Discord token", FT_TITLE, FG_BLACK))
+	y += 38
+
+	// Large URL box
+	contentW := d.Width - CONTENT_X - 24
+	s.items = append(s.items, NewBox(CONTENT_X+12, y, contentW, 60, urlStr, FT_TITLE, BG_DM, FG_WHITE))
+	y += 70
+
+	if ip != "" {
+		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "IP: "+ip, FT_LABEL, FG_MUTED))
+		y += 30
+	}
 
 	if s.SSHInfo != "" {
-		s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Or SSH:", FT_SMALL, FG_MUTED))
-		y += 22
-		s.items = append(s.items, NewLabel(CONTENT_X+8, y, s.SSHInfo, FT_SMALL, FG_BLACK))
-		y += 28
+		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Or SSH:", FT_SMALL, FG_MUTED))
+		y += 24
+		s.items = append(s.items, NewLabel(CONTENT_X+12, y, s.SSHInfo, FT_SMALL, FG_BLACK))
+		y += 36
 	}
 
 	y += 10
-	s.items = append(s.items, NewLabel(CONTENT_X+8, y, "Waiting for token...", FT_SMALL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Open the URL above on your computer/phone", FT_LABEL, FG_BLACK))
+	y += 26
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "(same Wi-Fi) → paste token → Log in", FT_LABEL, FG_BLACK))
+	y += 30
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Waiting for token...", FT_SMALL, FG_MUTED))
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
-	s.items = append(s.items, NewButton(btnX, d.Height-60, "Exit", s.OnQuit))
+	s.items = append(s.items, NewButton(btnX, d.Height-70, "Exit", s.OnQuit))
 }
 
 func (s *LoginScreen) Render(d *display.Display) {
