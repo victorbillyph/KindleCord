@@ -311,14 +311,16 @@ func (d *Display) DrawTextSized(cx, cy, size int, text string, fg, bg uint8) {
 		px := cx * CellSize
 		py := cy * CellSize
 		// Anti-aliased TrueType via fbink's OpenType support.
+		// Position via the text viewport (left/top), which is the only
+		// reliable way to place OT text; -x/-y are ignored by OT rendering.
 		font := d.font
 		if font == "" {
 			font = findFont()
 		}
-		args := []string{"-q", "-b",
-			"-t", "regular=" + font + ",size=" + strconv.Itoa(size) + ",format",
-			"-C", grayName(fg), "-B", grayName(bg),
-			"-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py)}
+		opts := "regular=" + font + ",size=" + strconv.Itoa(size) +
+			",format,left=" + fmt.Sprintf("%d", px) + ",top=" + fmt.Sprintf("%d", py)
+		args := []string{"-q", "-b", "-t", opts,
+			"-C", grayName(fg), "-B", grayName(bg)}
 		_ = d.runFB(append(args, text)...)
 		return
 	}
