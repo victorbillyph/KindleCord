@@ -4,6 +4,11 @@ A full-screen Discord client for Kindle e-ink devices (PW3, PW4, etc.).
 
 > **DISCLAIMER:** This project is **not affiliated, associated, authorized, endorsed by, or in any way officially connected with** Discord Inc., Amazon.com, Inc., or any of their subsidiaries or affiliates. The name "Discord" is a registered trademark of Discord Inc. Use at your own risk.
 
+## Buy me a coffee
+Hey, if you wanna support me, here:
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/victorflor0)
+if not, Its ok, im happy just for you seeing this
+
 ## Features
 
 - Full-screen native Discord client on Kindle e-ink
