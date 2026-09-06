@@ -435,20 +435,26 @@ func (a *App) Touch(x, y int) {
 func (a *App) Stop() { a.Running = false }
 
 // ── LoginScreen ──────────────────────────────────────────────────────
-
 type LoginScreen struct {
 	App     *App
 	URL     string
 	SSHInfo string
 	OnQuit  func()
+	OnFinish func()
+	page    int
 	items   []Component
 }
 
 func NewLoginScreen(url string, onQuit func()) *LoginScreen {
-	return &LoginScreen{URL: url, OnQuit: onQuit}
+	return &LoginScreen{URL: url, OnQuit: onQuit, page: 0}
 }
 
 func (s *LoginScreen) SetApp(a *App) { s.App = a }
+
+func (s *LoginScreen) SetPage(page int) {
+	s.page = page
+	s.build()
+}
 
 func (s *LoginScreen) OnShow(args map[string]interface{}) {
 	if v, ok := args["url"]; ok {
@@ -466,6 +472,16 @@ func (s *LoginScreen) OnShow(args map[string]interface{}) {
 			s.OnQuit = f
 		}
 	}
+	if v, ok := args["on_finish"]; ok {
+		if f, ok := v.(func()); ok {
+			s.OnFinish = f
+		}
+	}
+	if v, ok := args["page"]; ok {
+		if p, ok := v.(int); ok {
+			s.page = p
+		}
+	}
 	s.build()
 }
 
@@ -478,31 +494,88 @@ func (s *LoginScreen) build() {
 		urlStr = "http://0.0.0.0:8080"
 	}
 
-	y := 80
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Access on Browser to Configure", FT_TITLE, FG_BLACK))
+	switch s.page {
+	case 0:
+		// Step 1: Welcome
+		s.buildWelcome(d, urlStr)
+	case 1:
+		// Step 2: Configure via browser
+		s.buildConfigure(d, urlStr)
+	case 2:
+		// Step 3: Success - finish setup
+		s.buildSuccess(d)
+	}
+}
+
+func (s *LoginScreen) buildWelcome(d *display.Display, urlStr string) {
+	y := 70
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Bem-vindo ao KindleCord", FT_TITLE, FG_BLACK))
 	y += 38
 
-	// URL line - simple label, larger font, high contrast
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Um cliente Discord para o seu", FT_LABEL, FG_BLACK))
+	y += 26
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Kindle e-ink.", FT_LABEL, FG_BLACK))
+	y += 36
+
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Navegue em servidores, canais", FT_SMALL, FG_MUTED))
+	y += 22
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "e leia mensagens na tela", FT_SMALL, FG_MUTED))
+	y += 22
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "eletrônica, sem distrações.", FT_SMALL, FG_MUTED))
+	y += 36
+
+	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
+	s.items = append(s.items, NewButton(btnX+20, d.Height-70, "Próximo >", func() { s.page = 1; s.build() }))
+}
+
+func (s *LoginScreen) buildConfigure(d *display.Display, urlStr string) {
+	y := 70
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Acesse no Browser para Configurar", FT_TITLE, FG_BLACK))
+	y += 38
+
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, urlStr, FT_TITLE, FG_BLACK))
 	y += 40
 
 	if s.SSHInfo != "" {
-		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Or SSH:", FT_SMALL, FG_MUTED))
+		s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Ou SSH:", FT_SMALL, FG_MUTED))
 		y += 24
 		s.items = append(s.items, NewLabel(CONTENT_X+12, y, s.SSHInfo, FT_SMALL, FG_BLACK))
 		y += 36
 	}
 
 	y += 10
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Open the URL above on your computer/phone", FT_LABEL, FG_BLACK))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Abra a URL acima no seu", FT_LABEL, FG_BLACK))
 	y += 26
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "(same Wi-Fi) \u2192 paste token \u2192 Log in", FT_LABEL, FG_BLACK))
-	y += 30
-	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Waiting for token...", FT_SMALL, FG_MUTED))
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "computador/celular (mesmo Wi-Fi)", FT_LABEL, FG_BLACK))
+	y += 26
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Cole o token e clique Log in", FT_LABEL, FG_BLACK))
+	y += 36
+
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Aguardando token...", FT_SMALL, FG_MUTED))
 
 	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
-	s.items = append(s.items, NewButton(btnX, d.Height-70, "Exit", s.OnQuit))
+	s.items = append(s.items, NewButton(btnX-100, d.Height-70, "< Voltar", func() { s.page = 0; s.build() }))
+	s.items = append(s.items, NewButton(btnX+20, d.Height-70, "Próximo >", func() { s.page = 2; s.build() }))
 }
+
+func (s *LoginScreen) buildSuccess(d *display.Display) {
+	y := 90
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Tudo certo!", FT_TITLE, FG_BLACK))
+	y += 40
+
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Token recebido com sucesso.", FT_LABEL, FG_BLACK))
+	y += 26
+	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Clique abaixo para entrar no app.", FT_LABEL, FG_MUTED))
+	y += 40
+
+	btnX := CONTENT_X + (d.Width-CONTENT_X-100)/2
+	s.items = append(s.items, NewButton(btnX, d.Height-70, "Concluir setup", func() {
+		if s.OnFinish != nil {
+			s.OnFinish()
+		}
+	}))
+}
+
 func (s *LoginScreen) Render(d *display.Display) {
 	d.Clear(BG_CONTENT)
 	d.FillRect(0, 0, d.Width, HEADER_H, BG_HEADER)
@@ -519,7 +592,7 @@ func (s *LoginScreen) OnTouch(x, y int) bool {
 	}
 	for _, c := range s.items {
 		if c.Tap(x, y) {
-			return false
+			return true
 		}
 	}
 	return false

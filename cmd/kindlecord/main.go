@@ -166,10 +166,24 @@ func main() {
 		sshInfo := fmt.Sprintf("SSH: ssh kindlecord@%s -p 2222 (pass: kindle)", ip)
 
 		quitApp := false
+		finishSetup := make(chan struct{}, 1)
+
 		loginScreen := ui.NewLoginScreen(url, func() { quitApp = true })
+		loginScreen.OnFinish = func() {
+			select {
+			case finishSetup <- struct{}{}:
+			default:
+			}
+		}
 		app := ui.NewApp(disp)
 		app.Add("login", loginScreen)
-		app.Show("login", map[string]interface{}{"url": url, "ssh_info": sshInfo, "on_quit": func() { quitApp = true }})
+		app.Show("login", map[string]interface{}{
+			"url":       url,
+			"ssh_info":  sshInfo,
+			"on_quit":   func() { quitApp = true },
+			"on_finish": loginScreen.OnFinish,
+			"page":      0,
+		})
 
 		powerCh := make(chan bool, 1)
 		go func() {
@@ -194,6 +208,10 @@ func main() {
 				break outerLogin
 			case t := <-tokenCh:
 				token = t
+				// Show success page (step 3)
+				app.Show("login", map[string]interface{}{"page": 2})
+			case <-finishSetup:
+				// User clicked "Concluir setup" on success page
 				break outerLogin
 			default:
 			}
