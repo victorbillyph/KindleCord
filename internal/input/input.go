@@ -21,6 +21,9 @@ const (
 	BTN_TOUCH         = 330
 	KEY_POWER         = 116
 	KEY_SLEEP         = 142
+	
+	// EVIOCGRAB - grab/release device exclusively
+	EVIOCGRAB = 0x40044590 // _IOC(_IOC_WRITE, 'E', 0x90, 4)
 )
 
 // TouchEvent represents a touch press/release
@@ -191,6 +194,13 @@ func NewPowerWatcher(path string) *PowerWatcher {
 		}
 		sz = detectEventSize(f)
 		_ = syscall.SetNonblock(int(f.Fd()), true)
+		// Grab device exclusively so powerd doesn't see events and trigger suspend
+		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(f.Fd()), EVIOCGRAB, 1)
+		if errno != 0 {
+			log.Printf("[POWER] warning: failed to grab %s: %v", p, errno)
+		} else {
+			log.Printf("[POWER] grabbed %s exclusively", p)
+		}
 		log.Printf("[POWER] watching %s size=%d", p, sz)
 		files = append(files, f)
 		bufs = append(bufs, make([]byte, sz))
@@ -261,6 +271,8 @@ func (p *PowerWatcher) IsDouble() bool {
 func (p *PowerWatcher) Close() {
 	for _, f := range p.files {
 		if f != nil {
+			// Release exclusive grab
+			_, _, _ = syscall.Syscall(syscall.SYS_IOCTL, uintptr(f.Fd()), EVIOCGRAB, 0)
 			_ = f.Close()
 		}
 	}
