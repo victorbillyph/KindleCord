@@ -18,6 +18,14 @@ const (
 
 const cell = display.CellSize
 
+const (
+	FontTitle   = 22
+	FontButton  = 18
+	FontLabel   = 16
+	FontSmall   = 14
+	FontClose   = 20
+)
+
 func cx(c int) int { return c * cell }
 func cy(c int) int { return c * cell }
 
@@ -105,10 +113,10 @@ func (b *Button95) Render(d *display.Display) {
 	d.FillRect(x, y, b.W, b.H, bg)
 	if b.Pressed {
 		bevelDown(d, x, y, b.W, b.H)
-		d.DrawText(b.CX+(b.CW-len(b.Text))/2+1, b.CY+1, b.Text, fg, bg)
+		d.DrawTextSized(b.CX+(b.CW-len(b.Text))/2+1, b.CY+1, FontButton, b.Text, fg, bg)
 	} else {
 		bevelUp(d, x, y, b.W, b.H)
-		d.DrawText(b.CX+(b.CW-len(b.Text))/2, b.CY, b.Text, fg, bg)
+		d.DrawTextSized(b.CX+(b.CW-len(b.Text))/2, b.CY, FontButton, b.Text, fg, bg)
 	}
 }
 func (b *Button95) Contains(px, py int) bool {
@@ -140,7 +148,7 @@ func (l *Label95) Render(d *display.Display) {
 	if l.Width > 0 && len(txt) > l.Width {
 		txt = trunc(txt, l.Width)
 	}
-	d.DrawText(l.CX, l.CY, txt, l.FG, l.BG)
+	d.DrawTextSized(l.CX, l.CY, FontLabel, txt, l.FG, l.BG)
 }
 func (l *Label95) Contains(px, py int) bool { return false }
 func (l *Label95) Tap(px, py int) bool      { return false }
@@ -161,12 +169,12 @@ func (t *TitleBar95) Render(d *display.Display) {
 	w := d.Width
 	d.FillRect(0, 0, w, t.BarH, W95Blue)
 	d.FillRect(0, t.BarH-1, w, 1, W95Black)
-	d.DrawText(1, 0, trunc(t.Title, cols-4), W95White, W95Blue)
+	d.DrawTextSized(1, 0, FontTitle, trunc(t.Title, cols-4), W95White, W95Blue)
 	closeX := cols - 4
 	t.rect = [4]int{cx(closeX), 4, 3 * cell, t.BarH - 10}
 	d.FillRect(t.rect[0], t.rect[1], t.rect[2], t.rect[3], W95Gray)
 	bevelUp(d, t.rect[0], t.rect[1], t.rect[2], t.rect[3])
-	d.DrawText(closeX+1, 0, "X", W95Black, W95Gray)
+	d.DrawTextSized(closeX+1, 0, FontClose, "X", W95Black, W95Gray)
 }
 func (t *TitleBar95) Contains(px, py int) bool {
 	x, y, w, h := t.rect[0], t.rect[1], t.rect[2], t.rect[3]
@@ -196,12 +204,12 @@ func (m *ModernHeader) Render(d *display.Display) {
 	// soft header with rounded bottom
 	d.FillRect(0, 0, w, m.BarH, W95Blue)
 	d.FillRoundRect(0, m.BarH-8, w, 16, 8, W95Blue)
-	d.DrawText(1, 0, trunc(m.Title, d.Cols-4), W95White, W95Blue)
+	d.DrawTextSized(1, 0, FontTitle, trunc(m.Title, d.Cols-4), W95White, W95Blue)
 	closeX := d.Cols - 4
 	m.rect = [4]int{cx(closeX), 4, 3 * cell, m.BarH - 10}
 	d.FillRoundRect(m.rect[0], m.rect[1], m.rect[2], m.rect[3], 8, W95Gray)
 	bevelUp(d, m.rect[0], m.rect[1], m.rect[2], m.rect[3])
-	d.DrawText(closeX+1, 0, "X", W95Black, W95Gray)
+	d.DrawTextSized(closeX+1, 0, FontClose, "X", W95Black, W95Gray)
 }
 func (m *ModernHeader) Contains(px, py int) bool {
 	x, y, w, h := m.rect[0], m.rect[1], m.rect[2], m.rect[3]
@@ -265,7 +273,7 @@ func (s *scrollArrow) Render(d *display.Display) {
 		label = "  /\\  "
 	}
 	cx_ := (s.cols - len(label)/2) / 2
-	d.DrawText(cx_, s.cy, label, W95Black, W95Gray)
+	d.DrawTextSized(cx_, s.cy, FontSmall, label, W95Black, W95Gray)
 }
 func (s *scrollArrow) Contains(px, py int) bool { return false }
 func (s *scrollArrow) Tap(px, py int) bool      { return false }

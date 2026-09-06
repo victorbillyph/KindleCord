@@ -292,6 +292,11 @@ func (d *Display) Pixel(x, y int, color uint8) {
 
 // DrawText draws text at cell coordinates with fg/bg via fbink.
 func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
+	d.DrawTextSized(cx, cy, 16, text, fg, bg)
+}
+
+// DrawTextSized draws text at cell coordinates with a given font size (px).
+func (d *Display) DrawTextSized(cx, cy, size int, text string, fg, bg uint8) {
 	if cx >= d.Cols || cy >= d.Rows || text == "" {
 		return
 	}
@@ -311,7 +316,7 @@ func (d *Display) DrawText(cx, cy int, text string, fg, bg uint8) {
 			font = findFont()
 		}
 		args := []string{"-q", "-b",
-			"-t", "regular=" + font + ",size=24,format",
+			"-t", "regular=" + font + ",size=" + strconv.Itoa(size) + ",format",
 			"-C", grayName(fg), "-B", grayName(bg),
 			"-X", fmt.Sprintf("%d", px), "-Y", fmt.Sprintf("%d", py)}
 		_ = d.runFB(append(args, text)...)
