@@ -134,15 +134,30 @@ func main() {
 		app.Add("login", loginScreen)
 		app.Show("login", map[string]interface{}{"url": url, "on_quit": func() { quitApp = true }})
 
+		// Power watcher goroutine
+		powerCh := make(chan bool, 1)
+		go func() {
+			for {
+				power.Poll()
+				if power.IsDouble() {
+					log.Printf("[MAIN] power double -> exit login")
+					select {
+					case powerCh <- true:
+					default:
+					}
+					return
+				}
+				time.Sleep(30 * time.Millisecond)
+			}
+		}()
+
 		// Wait for token or quit
 	outerLogin:
 		for {
-			power.Poll()
-			if power.IsDouble() {
-				quitApp = true
-				break
-			}
 			select {
+			case <-powerCh:
+				quitApp = true
+				break outerLogin
 			case t := <-tokenCh:
 				token = t
 				break outerLogin
@@ -151,12 +166,14 @@ func main() {
 			if quitApp {
 				break outerLogin
 			}
-			ev := reader.Poll(200 * time.Millisecond)
+			ev := reader.Poll(50 * time.Millisecond)
 			if ev != nil && ev.Press {
+				log.Printf("[INPUT] login touch %d,%d", ev.X, ev.Y)
 				app.Touch(ev.X, ev.Y)
 			}
-			// also check quit flag set by button
-			// app touch may have triggered quit
+			if quitApp {
+				break outerLogin
+			}
 		}
 
 		if quitApp && token == "" {
@@ -199,14 +216,35 @@ func main() {
 		}, "Exit", true)
 		errApp.Add("error", errScreen)
 		errApp.Show("error", nil)
-		for !done {
-			power.Poll()
-			if power.IsDouble() {
-				break
+		// power goroutine for error screen
+		powerErrCh := make(chan bool, 1)
+		go func() {
+			for {
+				power.Poll()
+				if power.IsDouble() {
+					select {
+					case powerErrCh <- true:
+					default:
+					}
+					return
+				}
+				time.Sleep(30 * time.Millisecond)
 			}
-			ev := reader.Poll(500 * time.Millisecond)
+		}()
+		for !done {
+			select {
+			case <-powerErrCh:
+				done = true
+				break
+			default:
+			}
+			ev := reader.Poll(50 * time.Millisecond)
 			if ev != nil && ev.Press {
+				log.Printf("[INPUT] error touch %d,%d", ev.X, ev.Y)
 				errApp.Touch(ev.X, ev.Y)
+			}
+			if done {
+				break
 			}
 		}
 		disp.Clear(0xFF)
@@ -320,13 +358,37 @@ func main() {
 
 	showGuilds()
 
+	// power goroutine for main
+	powerMainCh := make(chan bool, 1)
+	go func() {
+		for app.Running {
+			power.Poll()
+			if power.IsDouble() {
+				log.Printf("[MAIN] power double -> exit main")
+				select {
+				case powerMainCh <- true:
+				default:
+				}
+				return
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
+
 	for app.Running {
-		power.Poll()
-		if power.IsDouble() {
+		select {
+		case <-powerMainCh:
+			log.Printf("[MAIN] power exit")
+			app.Stop()
+			break
+		default:
+		}
+		if !app.Running {
 			break
 		}
-		ev := reader.Poll(500 * time.Millisecond)
+		ev := reader.Poll(50 * time.Millisecond)
 		if ev != nil && ev.Press {
+			log.Printf("[INPUT] main touch %d,%d", ev.X, ev.Y)
 			app.Touch(ev.X, ev.Y)
 		}
 	}
