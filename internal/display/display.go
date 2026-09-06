@@ -65,31 +65,37 @@ func grayName(gray uint8) string {
 	return "WHITE"
 }
 
-func getFbSizeIoctl() (w, h int, ok bool) {
+func getFbSizeIoctl() (w, h, stride int, ok bool) {
 	f, err := os.OpenFile("/dev/fb0", os.O_RDONLY, 0)
 	if err != nil {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 	defer f.Close()
 	const FBIOGET_VSCREENINFO = 0x4600
 	var info [160]byte
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), FBIOGET_VSCREENINFO, uintptr(unsafe.Pointer(&info[0])))
 	if errno != 0 {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
-	w = int(info[0]) | int(info[1])<<8 | int(info[2])<<16 | int(info[3])<<24
-	h = int(info[4]) | int(info[5])<<8 | int(info[6])<<16 | int(info[7])<<24
+	le := func(b []byte) int { return int(b[0]) | int(b[1])<<8 | int(b[2])<<16 | int(b[3])<<24 }
+	w = le(info[0:4])
+	h = le(info[4:8])
+	// xres_virtual == line_length in bytes for 8bpp (equals row stride)
+	stride = le(info[8:12])
 	if w > 0 && h > 0 && w < 5000 && h < 5000 {
-		return w, h, true
+		return w, h, stride, true
 	}
-	return 0, 0, false
+	return 0, 0, 0, false
 }
 
 func detectFBParams() (w, h, stride, bpp int) {
 	w, h, stride, bpp = 1448, 1072, 1448, 8
 	// Try ioctl first (most reliable on Kindle)
-	if ww, hh, ok := getFbSizeIoctl(); ok {
+	if ww, hh, ss, ok := getFbSizeIoctl(); ok {
 		w, h = ww, hh
+		if ss > 0 {
+			stride = ss
+		}
 	} else if data, err := os.ReadFile("/sys/class/graphics/fb0/mode"); err == nil {
 		m := strings.TrimSpace(string(data))
 		if strings.Contains(m, "x") {
