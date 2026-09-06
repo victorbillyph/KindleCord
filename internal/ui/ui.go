@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"net/url"
 	"strings"
 	"sync"
 
@@ -479,27 +478,13 @@ func (s *LoginScreen) build() {
 		urlStr = "http://0.0.0.0:8080"
 	}
 
-	// Extract IP and port for display
-	ip := "0.0.0.0"
-	port := "8080"
-	if u, err := url.Parse(urlStr); err == nil {
-		ip = u.Hostname()
-		if u.Port() != "" {
-			port = u.Port()
-		}
-	}
-	if ip == "0.0.0.0" {
-		ip = "your-kindle-ip"
-	}
-
 	y := 80
 	s.items = append(s.items, NewLabel(CONTENT_X+12, y, "Access on Browser to Configure", FT_TITLE, FG_BLACK))
 	y += 38
 
-	// URL line
-	displayURL := "http://" + ip + ":" + port
+	// URL line - display the full URL directly
 	contentW := d.Width - CONTENT_X - 24
-	s.items = append(s.items, NewBox(CONTENT_X+12, y, contentW, 48, displayURL, FT_TITLE, BG_DM, FG_WHITE))
+	s.items = append(s.items, NewBox(CONTENT_X+12, y, contentW, 48, urlStr, FT_TITLE, BG_DM, FG_WHITE))
 	y += 58
 
 	if s.SSHInfo != "" {
