@@ -7,27 +7,31 @@ import (
 )
 
 const (
-	Desktop  = 0x55
-	W95Gray  = 0xBB
-	W95Dark  = 0x44
-	W95Light = 0xDD
-	W95Blue  = 0x33
-	W95Black = 0x00
-	W95White = 0xFF
+	BG        = 0xEE
+	CARD      = 0xFF
+	PRIMARY   = 0x22
+	ACCENT    = 0x44
+	TEXT      = 0x11
+	TEXTMUTED = 0x77
+	BORDER    = 0xCC
+	BTNBG     = 0x33
+	BTNFG     = 0xFF
+	GOVERLAY  = 0xF2
 )
 
 const cell = display.CellSize
 
 const (
-	FontTitle   = 16
+	FontTitle   = 18
 	FontButton  = 14
 	FontLabel   = 12
 	FontSmall   = 10
 	FontClose   = 14
+	FontMsg     = 12
+	FontAuthor  = 12
 )
 
-func cx(c int) int { return c * cell }
-func cy(c int) int { return c * cell }
+func px(c int) int { return c * cell }
 
 func trunc(s string, max int) string {
 	if len(s) <= max {
@@ -39,55 +43,14 @@ func trunc(s string, max int) string {
 	return s[:max-1] + "~"
 }
 
-func bevelUp(d *display.Display, x, y, w, h int) {
-	// Rounded bevel for less pixelated look
-	if d.IsSimulate() || w < 40 {
-		// fallback to classic bevel on sim
-		d.HLine(x, y, w, W95White)
-		d.VLine(x, y, h, W95White)
-		d.HLine(x, y+h, w, W95Dark)
-		d.VLine(x+w, y, h, W95Dark)
-		return
-	}
-	// Rounded button: fill with rounded rect + soft shadow
-	r := 8
-	if h < 20 {
-		r = 4
-	}
-	d.FillRoundRect(x, y, w, h, r, W95Gray)
-	// highlight top edge
-	d.FillRect(x+r, y, w-r*2, 2, W95White)
-	d.FillRect(x, y+r, 2, h-r*2, W95White)
-	// shadow bottom
-	d.FillRect(x+r, y+h-2, w-r*2, 2, W95Dark)
-	d.FillRect(x+w-2, y+r, 2, h-r*2, W95Dark)
-}
-
-func bevelDown(d *display.Display, x, y, w, h int) {
-	if d.IsSimulate() || w < 40 {
-		d.HLine(x, y, w, W95Dark)
-		d.VLine(x, y, h, W95Dark)
-		d.HLine(x, y+h, w, W95White)
-		d.VLine(x+w, y, h, W95White)
-		return
-	}
-	r := 8
-	if h < 20 {
-		r = 4
-	}
-	d.FillRoundRect(x, y, w, h, r, W95Gray)
-	d.FillRect(x+r, y, w-r*2, 2, W95Dark)
-	d.FillRect(x, y+r, 2, h-r*2, W95Dark)
-}
-
 // Component interface
 type Component interface {
 	Render(d *display.Display)
-	Tap(px, py int) bool // returns true if handled
+	Tap(px, py int) bool
 	Contains(px, py int) bool
 }
 
-// Button95
+// Button
 type Button95 struct {
 	CX, CY   int
 	Text     string
@@ -102,37 +65,42 @@ func NewButton(cx_, cy_ int, text string, cb func(), width int) *Button95 {
 	if cw == 0 {
 		cw = len(text) + 4
 	}
-	return &Button95{CX: cx_, CY: cy_, Text: text, Callback: cb, CW: cw, W: cw * cell, H: 44}
+	return &Button95{CX: cx_, CY: cy_, Text: text, Callback: cb, CW: cw, W: cw * cell, H: 40}
 }
 
 func (b *Button95) Render(d *display.Display) {
-	x := cx(b.CX)
-	y := cy(b.CY)
-	bg := uint8(W95Gray)
-	fg := uint8(W95Black)
-	d.FillRect(x, y, b.W, b.H, bg)
-	if b.Pressed {
-		bevelDown(d, x, y, b.W, b.H)
-		d.DrawTextSized(b.CX+(b.CW-len(b.Text))/2+1, b.CY+1, FontButton, b.Text, fg, bg)
-	} else {
-		bevelUp(d, x, y, b.W, b.H)
-		d.DrawTextSized(b.CX+(b.CW-len(b.Text))/2, b.CY, FontButton, b.Text, fg, bg)
+	x := px(b.CX)
+	y := px(b.CY)
+	r := 8
+	if b.H < 20 {
+		r = 4
 	}
+	d.FillRoundRect(x, y, b.W, b.H, r, BTNBG)
+	if b.Pressed {
+		d.FillRoundRect(x+1, y+1, b.W-2, b.H-2, r-1, ACCENT)
+	}
+	tx := x + (b.W-len(b.Text)*10)/2
+	ty := y + (b.H-14)/2
+	_ = tx
+	_ = ty
+	d.DrawTextSized(b.CX+(b.CW-len(b.Text))/2, b.CY+1, FontButton, b.Text, BTNFG, BTNBG)
 }
-func (b *Button95) Contains(px, py int) bool {
-	x := cx(b.CX)
-	y := cy(b.CY)
-	return px >= x && px < x+b.W && py >= y && py < y+b.H
+
+func (b *Button95) Contains(px_, py_ int) bool {
+	x := px(b.CX)
+	y := px(b.CY)
+	return px_ >= x && px_ < x+b.W && py_ >= y && py_ < y+b.H
 }
-func (b *Button95) Tap(px, py int) bool {
-	if b.Contains(px, py) && b.Callback != nil {
+
+func (b *Button95) Tap(px_, py_ int) bool {
+	if b.Contains(px_, py_) && b.Callback != nil {
 		b.Callback()
 		return true
 	}
 	return false
 }
 
-// Label95
+// Label
 type Label95 struct {
 	CX, CY int
 	Text   string
@@ -143,6 +111,7 @@ type Label95 struct {
 func NewLabel(cx_, cy_ int, text string, width int, fg, bg uint8) *Label95 {
 	return &Label95{CX: cx_, CY: cy_, Text: text, Width: width, FG: fg, BG: bg}
 }
+
 func (l *Label95) Render(d *display.Display) {
 	txt := l.Text
 	if l.Width > 0 && len(txt) > l.Width {
@@ -150,10 +119,11 @@ func (l *Label95) Render(d *display.Display) {
 	}
 	d.DrawTextSized(l.CX, l.CY, FontLabel, txt, l.FG, l.BG)
 }
-func (l *Label95) Contains(px, py int) bool { return false }
-func (l *Label95) Tap(px, py int) bool      { return false }
 
-// TitleBar95
+func (l *Label95) Contains(px_, py_ int) bool { return false }
+func (l *Label95) Tap(px_, py_ int) bool      { return false }
+
+// TitleBar
 type TitleBar95 struct {
 	Title   string
 	OnClose func()
@@ -162,33 +132,36 @@ type TitleBar95 struct {
 }
 
 func NewTitleBar(title string, onClose func()) *TitleBar95 {
-	return &TitleBar95{Title: title, OnClose: onClose, BarH: 48}
+	return &TitleBar95{Title: title, OnClose: onClose, BarH: 44}
 }
+
 func (t *TitleBar95) Render(d *display.Display) {
-	cols := d.Cols
 	w := d.Width
-	d.FillRect(0, 0, w, t.BarH, W95Blue)
-	d.FillRect(0, t.BarH-1, w, 1, W95Black)
-	d.DrawTextSized(1, 0, FontTitle, trunc(t.Title, cols-4), W95White, W95Blue)
-	closeX := cols - 4
-	t.rect = [4]int{cx(closeX), 4, 3 * cell, t.BarH - 10}
-	d.FillRect(t.rect[0], t.rect[1], t.rect[2], t.rect[3], W95Gray)
-	bevelUp(d, t.rect[0], t.rect[1], t.rect[2], t.rect[3])
-	d.DrawTextSized(closeX+1, 0, FontClose, "X", W95Black, W95Gray)
+	d.FillRect(0, 0, w, t.BarH, PRIMARY)
+	d.FillRect(0, t.BarH-1, w, 1, BORDER)
+	d.DrawTextSized(2, 1, FontTitle, trunc(t.Title, d.Cols-6), CARD, PRIMARY)
+	if t.OnClose != nil {
+		closeX := d.Cols - 4
+		t.rect = [4]int{px(closeX), 6, 3*cell, t.BarH - 12}
+		d.FillRoundRect(t.rect[0], t.rect[1], t.rect[2], t.rect[3], 6, ACCENT)
+		d.DrawTextSized(closeX+1, 1, FontClose, "X", CARD, ACCENT)
+	}
 }
-func (t *TitleBar95) Contains(px, py int) bool {
+
+func (t *TitleBar95) Contains(px_, py_ int) bool {
 	x, y, w, h := t.rect[0], t.rect[1], t.rect[2], t.rect[3]
-	return px >= x && px < x+w && py >= y && py < y+h
+	return px_ >= x && px_ < x+w && py_ >= y && py_ < y+h
 }
-func (t *TitleBar95) Tap(px, py int) bool {
-	if t.OnClose != nil && t.Contains(px, py) {
+
+func (t *TitleBar95) Tap(px_, py_ int) bool {
+	if t.OnClose != nil && t.Contains(px_, py_) {
 		t.OnClose()
 		return true
 	}
 	return false
 }
 
-// ModernHeader - cleaner, rounded
+// ModernHeader
 type ModernHeader struct {
 	Title   string
 	OnClose func()
@@ -197,45 +170,48 @@ type ModernHeader struct {
 }
 
 func NewModernHeader(title string, onClose func()) *ModernHeader {
-	return &ModernHeader{Title: title, OnClose: onClose, BarH: 48}
+	return &ModernHeader{Title: title, OnClose: onClose, BarH: 44}
 }
+
 func (m *ModernHeader) Render(d *display.Display) {
 	w := d.Width
-	// soft header with rounded bottom
-	d.FillRect(0, 0, w, m.BarH, W95Blue)
-	d.FillRoundRect(0, m.BarH-8, w, 16, 8, W95Blue)
-	d.DrawTextSized(1, 0, FontTitle, trunc(m.Title, d.Cols-4), W95White, W95Blue)
-	closeX := d.Cols - 4
-	m.rect = [4]int{cx(closeX), 4, 3 * cell, m.BarH - 10}
-	d.FillRoundRect(m.rect[0], m.rect[1], m.rect[2], m.rect[3], 8, W95Gray)
-	bevelUp(d, m.rect[0], m.rect[1], m.rect[2], m.rect[3])
-	d.DrawTextSized(closeX+1, 0, FontClose, "X", W95Black, W95Gray)
+	d.FillRect(0, 0, w, m.BarH, PRIMARY)
+	d.DrawTextSized(2, 1, FontTitle, trunc(m.Title, d.Cols-6), CARD, PRIMARY)
+	if m.OnClose != nil {
+		closeX := d.Cols - 4
+		m.rect = [4]int{px(closeX), 6, 3*cell, m.BarH - 12}
+		d.FillRoundRect(m.rect[0], m.rect[1], m.rect[2], m.rect[3], 6, ACCENT)
+		d.DrawTextSized(closeX+1, 1, FontClose, "X", CARD, ACCENT)
+	}
 }
-func (m *ModernHeader) Contains(px, py int) bool {
+
+func (m *ModernHeader) Contains(px_, py_ int) bool {
 	x, y, w, h := m.rect[0], m.rect[1], m.rect[2], m.rect[3]
-	return px >= x && px < x+w && py >= y && py < y+h
+	return px_ >= x && px_ < x+w && py_ >= y && py_ < y+h
 }
-func (m *ModernHeader) Tap(px, py int) bool {
-	if m.OnClose != nil && m.Contains(px, py) {
+
+func (m *ModernHeader) Tap(px_, py_ int) bool {
+	if m.OnClose != nil && m.Contains(px_, py_) {
 		m.OnClose()
 		return true
 	}
 	return false
 }
 
-// Card - white rounded container (simple)
+// Card
 type Card struct {
 	x, y, w, h, radius int
 }
 
 func (c *Card) Render(d *display.Display) {
-	d.FillRect(c.x, c.y, c.w, c.h, W95White)
-	d.Rect(c.x, c.y, c.w, c.h, W95Dark, 1)
+	d.FillRoundRect(c.x, c.y, c.w, c.h, c.radius, CARD)
+	d.Rect(c.x, c.y, c.w, c.h, BORDER, 1)
 }
-func (c *Card) Contains(px, py int) bool { return false }
-func (c *Card) Tap(px, py int) bool      { return false }
 
-// Box - rounded bordered box for URL/highlight
+func (c *Card) Contains(px_, py_ int) bool { return false }
+func (c *Card) Tap(px_, py_ int) bool      { return false }
+
+// Box
 type Box struct {
 	x, y, w, h, radius int
 	bg, border         uint8
@@ -245,40 +221,51 @@ func (b *Box) Render(d *display.Display) {
 	d.FillRoundRect(b.x, b.y, b.w, b.h, b.radius, b.border)
 	d.FillRoundRect(b.x+2, b.y+2, b.w-4, b.h-4, b.radius-2, b.bg)
 }
-func (b *Box) Contains(px, py int) bool { return false }
-func (b *Box) Tap(px, py int) bool      { return false }
 
-// Internal helpers
+func (b *Box) Contains(px_, py_ int) bool { return false }
+func (b *Box) Tap(px_, py_ int) bool      { return false }
+
+// rowBg
 type rowBg struct{ cy, cols int }
+
 func (r *rowBg) Render(d *display.Display) {
-	// subtle rounded row
-	d.FillRoundRect(cell+2, cy(r.cy)+1, d.Width-cell*2-4, cell-2, 6, 0xF2)
+	d.FillRoundRect(8, px(r.cy)+2, d.Width-16, cell-4, 6, GOVERLAY)
 }
-func (r *rowBg) Contains(px, py int) bool { return false }
-func (r *rowBg) Tap(px, py int) bool      { return false }
 
+func (r *rowBg) Contains(px_, py_ int) bool { return false }
+func (r *rowBg) Tap(px_, py_ int) bool      { return false }
+
+// divider
 type divider struct{ y, w int }
-func (d2 *divider) Render(d *display.Display) { d.FillRect(cell, d2.y, d.Width-cell*2, 1, W95Dark) }
-func (d2 *divider) Contains(px, py int) bool { return false }
-func (d2 *divider) Tap(px, py int) bool      { return false }
 
-type scrollArrow struct{ cy, cols int; up bool }
+func (d2 *divider) Render(d *display.Display) {
+	d.FillRect(12, d2.y, d.Width-24, 1, BORDER)
+}
+
+func (d2 *divider) Contains(px_, py_ int) bool { return false }
+func (d2 *divider) Tap(px_, py_ int) bool      { return false }
+
+// scrollArrow
+type scrollArrow struct {
+	cy, cols int
+	up       bool
+}
+
 func (s *scrollArrow) Render(d *display.Display) {
-	y := cy(s.cy)
+	y := px(s.cy)
 	w := d.Width
-	d.FillRoundRect(cell+4, y+2, w-cell*2-8, cell-4, 8, W95Gray)
-	bevelUp(d, cell+4, y+2, w-cell*2-8, cell-4)
+	d.FillRoundRect(8, y+2, w-16, cell-4, 6, ACCENT)
 	label := "  \\/  "
 	if s.up {
 		label = "  /\\  "
 	}
-	cx_ := (s.cols - len(label)/2) / 2
-	d.DrawTextSized(cx_, s.cy, FontSmall, label, W95Black, W95Gray)
+	d.DrawTextSized(2, s.cy, FontSmall, label, CARD, ACCENT)
 }
-func (s *scrollArrow) Contains(px, py int) bool { return false }
-func (s *scrollArrow) Tap(px, py int) bool      { return false }
 
-// App95 manages screens
+func (s *scrollArrow) Contains(px_, py_ int) bool { return false }
+func (s *scrollArrow) Tap(px_, py_ int) bool      { return false }
+
+// App
 type App95 struct {
 	Display *display.Display
 	Screens map[string]Screen
@@ -289,17 +276,19 @@ type App95 struct {
 type Screen interface {
 	SetApp(a *App95)
 	Render(d *display.Display)
-	OnTouch(px, py int) bool // true = needs re-render
+	OnTouch(px, py int) bool
 	OnShow(args map[string]interface{})
 }
 
 func NewApp(d *display.Display) *App95 {
 	return &App95{Display: d, Screens: make(map[string]Screen), Running: true}
 }
+
 func (a *App95) Add(name string, s Screen) {
 	s.SetApp(a)
 	a.Screens[name] = s
 }
+
 func (a *App95) Show(name string, args map[string]interface{}) {
 	a.Current = name
 	scr := a.Screens[name]
@@ -308,17 +297,19 @@ func (a *App95) Show(name string, args map[string]interface{}) {
 		scr.Render(a.Display)
 	}
 }
-func (a *App95) Touch(px, py int) {
+
+func (a *App95) Touch(px_, py_ int) {
 	if a.Current == "" {
 		return
 	}
 	scr := a.Screens[a.Current]
 	if scr != nil {
-		if scr.OnTouch(px, py) {
+		if scr.OnTouch(px_, py_) {
 			scr.Render(a.Display)
 		}
 	}
 }
+
 func (a *App95) Stop() { a.Running = false }
 
 // BaseScreen
@@ -326,25 +317,29 @@ type BaseScreen struct {
 	App        *App95
 	Components []Component
 }
+
 func (b *BaseScreen) SetApp(a *App95) { b.App = a }
+
 func (b *BaseScreen) Render(d *display.Display) {
-	d.Clear(W95White)
+	d.Clear(BG)
 	for _, c := range b.Components {
 		c.Render(d)
 	}
 	d.Refresh()
 }
+
 func (b *BaseScreen) OnShow(args map[string]interface{}) { b.Components = nil }
-func (b *BaseScreen) OnTouch(px, py int) bool {
+
+func (b *BaseScreen) OnTouch(px_, py_ int) bool {
 	for _, c := range b.Components {
-		if c.Tap(px, py) {
+		if c.Tap(px_, py_) {
 			return false
 		}
 	}
 	return false
 }
 
-// LoginScreen95
+// LoginScreen
 type LoginScreen95 struct {
 	BaseScreen
 	URL     string
@@ -355,6 +350,7 @@ type LoginScreen95 struct {
 func NewLoginScreen(url string, onQuit func()) *LoginScreen95 {
 	return &LoginScreen95{URL: url, OnQuit: onQuit}
 }
+
 func (s *LoginScreen95) OnShow(args map[string]interface{}) {
 	if v, ok := args["url"]; ok {
 		if u, ok := v.(string); ok {
@@ -373,6 +369,7 @@ func (s *LoginScreen95) OnShow(args map[string]interface{}) {
 	}
 	s.build()
 }
+
 func (s *LoginScreen95) build() {
 	if s.App == nil {
 		return
@@ -380,47 +377,58 @@ func (s *LoginScreen95) build() {
 	d := s.App.Display
 	cols := d.Cols
 	s.Components = nil
-	s.Components = append(s.Components, NewTitleBar("KindleCord Setup", s.OnQuit))
-	y := 4
-	s.Components = append(s.Components, NewLabel(2, y, "Open on your phone:", 0, W95Black, W95White))
+
+	s.Components = append(s.Components, NewTitleBar("KindleCord", s.OnQuit))
+
+	y := 3
+
+	s.Components = append(s.Components, NewLabel(2, y, "Open on your phone:", 0, TEXTMUTED, BG))
 	y += 2
+
 	url := s.URL
 	if url == "" {
 		url = "http://0.0.0.0:8080"
 	}
 	cx_ := (cols - len(url)) / 2
-	if cx_ < 0 {
-		cx_ = 0
+	if cx_ < 2 {
+		cx_ = 2
 	}
-	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, W95Blue, W95White))
+	s.Components = append(s.Components, NewLabel(cx_, y, url, cols-4, ACCENT, BG))
 	y += 2
+
 	if s.SSHInfo != "" {
 		sshCx := (cols - len(s.SSHInfo)) / 2
-		if sshCx < 0 {
-			sshCx = 0
+		if sshCx < 2 {
+			sshCx = 2
 		}
-		s.Components = append(s.Components, NewLabel(sshCx, y, s.SSHInfo, cols-4, W95Dark, W95White))
+		s.Components = append(s.Components, NewLabel(sshCx, y, s.SSHInfo, cols-4, TEXTMUTED, BG))
 		y += 2
 	} else {
 		y += 1
 	}
-	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, W95Black, W95White))
+
+	y += 1
+
+	s.Components = append(s.Components, NewLabel(2, y, "Paste your Discord token", 0, TEXT, BG))
 	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "to log in.", 0, TEXT, BG))
 	y += 2
-	s.Components = append(s.Components, NewLabel(2, y, "Waiting for token...", 0, W95Black, W95White))
+	s.Components = append(s.Components, NewLabel(2, y, "Waiting for token...", 0, TEXTMUTED, BG))
+
 	btnY := d.Rows - 3
-	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "Exit", s.OnQuit, 8))
+	s.Components = append(s.Components, NewButton((cols-8)/2, btnY, "  Exit  ", s.OnQuit, 8))
 }
+
 func (s *LoginScreen95) Render(d *display.Display) { s.BaseScreen.Render(d) }
-func (s *LoginScreen95) OnTouch(px, py int) bool {
+
+func (s *LoginScreen95) OnTouch(px_, py_ int) bool {
 	for _, c := range s.Components {
-		c.Tap(px, py)
+		c.Tap(px_, py_)
 	}
 	return false
 }
 
-// ListScreen95
+// ListScreen
 type ListScreen95 struct {
 	BaseScreen
 	Title         string
@@ -442,6 +450,7 @@ func NewListScreen(title string, items []string, onSelect func(int), onBack func
 	}
 	return &ListScreen95{Title: title, Items: items, OnSelect: onSelect, OnBack: onBack, BackLabel: backLabel, ShowTitle: showTitle}
 }
+
 func (s *ListScreen95) OnShow(args map[string]interface{}) {
 	if v, ok := args["items"]; ok {
 		if vv, ok := v.([]string); ok {
@@ -466,6 +475,7 @@ func (s *ListScreen95) OnShow(args map[string]interface{}) {
 	s.scroll = 0
 	s.build()
 }
+
 func (s *ListScreen95) build() {
 	if s.App == nil {
 		return
@@ -477,9 +487,9 @@ func (s *ListScreen95) build() {
 	if s.ShowTitle {
 		s.Components = append(s.Components, NewModernHeader(s.Title, s.OnBack))
 		row = 2
-		// subtle card behind list
-		s.Components = append(s.Components, &Card{ x: cell, y: cy(row)-4, w: d.Width-cell*2, h: (d.Rows-row-3)*cell, radius: 12 })
+		s.Components = append(s.Components, &Card{x: 4, y: px(row) - 2, w: d.Width - 8, h: (d.Rows - row - 3) * cell, radius: 8})
 	}
+
 	total := len(s.Items)
 	visibleRows := d.Rows - row - 4
 	if visibleRows < 0 {
@@ -487,31 +497,23 @@ func (s *ListScreen95) build() {
 	}
 	hasUp := s.scroll > 0
 	hasDown := false
-	// reserve space for arrows
+
 	if hasUp {
 		visibleRows--
 	}
-	// compute if we need down arrow
 	if s.scroll+visibleRows < total {
 		hasDown = true
-		if visibleRows > 0 {
-			// down arrow takes one row
-			// check after accounting
-			if s.scroll+visibleRows < total {
-				// keep as is, we will reserve
-			}
-		}
-		if hasDown {
-			visibleRows--
-			if visibleRows < 0 {
-				visibleRows = 0
-			}
+		visibleRows--
+		if visibleRows < 0 {
+			visibleRows = 0
 		}
 	}
+
 	if hasUp {
 		s.Components = append(s.Components, &scrollArrow{cy: row, cols: cols, up: true})
 		row++
 	}
+
 	visEnd := s.scroll + visibleRows
 	if visEnd > total {
 		visEnd = total
@@ -522,15 +524,17 @@ func (s *ListScreen95) build() {
 			s.Components = append(s.Components, &rowBg{cy: row + vi, cols: cols})
 		}
 		txt := "  " + s.Items[i]
-		s.Components = append(s.Components, NewLabel(2, row+vi, txt, cols-4, W95Black, W95White))
+		s.Components = append(s.Components, NewLabel(2, row+vi, txt, cols-4, TEXT, CARD))
 	}
+
 	if hasDown {
 		s.Components = append(s.Components, &scrollArrow{cy: row + visibleRows, cols: cols, up: false})
 	}
+
 	if s.OnBack != nil {
 		s.Components = append(s.Components, NewButton(2, d.Rows-3, s.BackLabel, s.OnBack, len(s.BackLabel)+4))
 	}
-	// store for touch
+
 	s.scrollHasUp = hasUp
 	s.scrollHasDown = hasDown
 	s.scrollVisible = visibleRows
@@ -547,36 +551,36 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-
-
-func (s *ListScreen95) OnTouch(px, py int) bool {
+func (s *ListScreen95) OnTouch(px_, py_ int) bool {
 	d := s.App.Display
 	total := len(s.Items)
-	row := py / cell
-	// back button
+	row := py_ / cell
+
 	if row >= d.Rows-3 && s.OnBack != nil {
 		s.OnBack()
 		return false
 	}
+
 	if s.ShowTitle && row < 2 {
 		for _, c := range s.Components {
-			if c.Tap(px, py) {
+			if c.Tap(px_, py_) {
 				return false
 			}
 		}
 		return false
 	}
+
 	startRow := 2
 	if !s.ShowTitle {
 		startRow = 0
 	}
-	// up arrow
+
 	if s.scroll > 0 && row == startRow {
 		s.scroll--
 		s.build()
 		return true
 	}
-	// down arrow
+
 	if s.scroll+s.scrollVisible < total {
 		last := d.Rows - 4
 		if row == last {
@@ -585,9 +589,8 @@ func (s *ListScreen95) OnTouch(px, py int) bool {
 			return true
 		}
 	}
-	// item select
+
 	if row >= startRow && row < d.Rows-3 {
-		// adjust for up arrow offset
 		effectiveStart := startRow
 		if s.scrollHasUp {
 			effectiveStart++
@@ -604,9 +607,7 @@ func (s *ListScreen95) OnTouch(px, py int) bool {
 	return false
 }
 
-
-
-// MessageScreen95
+// MessageScreen
 type MessageScreen95 struct {
 	BaseScreen
 	Title    string
@@ -621,6 +622,7 @@ type MessageScreen95 struct {
 func NewMessageScreen(title string, msgs []map[string]interface{}, onBack func()) *MessageScreen95 {
 	return &MessageScreen95{Title: title, Messages: msgs, OnBack: onBack}
 }
+
 func (s *MessageScreen95) OnShow(args map[string]interface{}) {
 	if v, ok := args["messages"]; ok {
 		if vv, ok := v.([]map[string]interface{}); ok {
@@ -640,6 +642,7 @@ func (s *MessageScreen95) OnShow(args map[string]interface{}) {
 	s.scroll = 0
 	s.build()
 }
+
 func (s *MessageScreen95) build() {
 	if s.App == nil {
 		return
@@ -648,7 +651,6 @@ func (s *MessageScreen95) build() {
 	cols := d.Cols
 	t := strings.TrimPrefix(s.Title, "#")
 	total := len(s.Messages)
-	// calc visible messages: each msg 2 rows, arrows 1 row each
 	baseVisible := (d.Rows - 5) / 2
 	if baseVisible < 0 {
 		baseVisible = 0
@@ -690,10 +692,10 @@ func (s *MessageScreen95) build() {
 			}
 		}
 		content, _ := msg["content"].(string)
-		s.Components = append(s.Components, NewLabel(2, row, author, 0, W95Blue, W95White))
-		s.Components = append(s.Components, NewLabel(2, row+1, "  "+trunc(content, cols-5), 0, W95Black, W95White))
+		s.Components = append(s.Components, NewLabel(2, row, author, 0, PRIMARY, CARD))
+		s.Components = append(s.Components, NewLabel(2, row+1, "  "+trunc(content, cols-5), 0, TEXT, CARD))
 		if i < visEnd-1 {
-			s.Components = append(s.Components, &divider{y: cy(row+2) - 12, w: cols * cell})
+			s.Components = append(s.Components, &divider{y: px(row+2) - 10, w: cols * cell})
 		}
 		row += 2
 	}
@@ -702,16 +704,17 @@ func (s *MessageScreen95) build() {
 	}
 	s.Components = append(s.Components, NewButton(2, d.Rows-3, "  OK  ", s.OnBack, 6))
 }
-func (s *MessageScreen95) OnTouch(px, py int) bool {
+
+func (s *MessageScreen95) OnTouch(px_, py_ int) bool {
 	d := s.App.Display
-	row := py / cell
+	row := py_ / cell
 	if row >= d.Rows-3 && s.OnBack != nil {
 		s.OnBack()
 		return false
 	}
 	if row < 2 {
 		for _, c := range s.Components {
-			if c.Tap(px, py) {
+			if c.Tap(px_, py_) {
 				return false
 			}
 		}
@@ -733,7 +736,7 @@ func (s *MessageScreen95) OnTouch(px, py int) bool {
 	return false
 }
 
-// Dialog95
+// Dialog
 type Dialog95 struct {
 	BaseScreen
 	Title   string
@@ -744,6 +747,7 @@ type Dialog95 struct {
 func NewDialog(title, message string, onOK func()) *Dialog95 {
 	return &Dialog95{Title: title, Message: message, OnOK: onOK}
 }
+
 func (d2 *Dialog95) OnShow(args map[string]interface{}) {
 	if v, ok := args["title"]; ok {
 		if vv, ok := v.(string); ok {
@@ -762,6 +766,7 @@ func (d2 *Dialog95) OnShow(args map[string]interface{}) {
 	}
 	d2.build()
 }
+
 func (d2 *Dialog95) build() {
 	if d2.App == nil {
 		return
@@ -777,7 +782,7 @@ func (d2 *Dialog95) build() {
 		if cx_ < 2 {
 			cx_ = 2
 		}
-		d2.Components = append(d2.Components, NewLabel(cx_, y, line, 0, W95Black, W95White))
+		d2.Components = append(d2.Components, NewLabel(cx_, y, line, 0, TEXT, BG))
 		y += 2
 	}
 	btnY := y + 1
